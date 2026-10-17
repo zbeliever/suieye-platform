@@ -56,26 +56,30 @@ def main() -> int:
     total_assets = db.query(EquipmentAsset).count()
     print(f"[2/3] 台账 seed: 新增 {added_assets} 台，库中共 {total_assets} 台")
 
-    # ---- 3. seed 历史维护记录（表为空才灌，避免重复） ----
-    existing = db.query(EquipmentMaintenanceRecord).count()
-    if existing == 0:
-        added = 0
-        for eid, records in _maintenance_seeds.items():
-            for r in records:
-                db.add(EquipmentMaintenanceRecord(
-                    record_id=r["id"],
-                    equipment_id=eid,
-                    date=r["date"],
-                    type=r["type"],
-                    technician=r["technician"],
-                    content=r["content"],
-                    result=r["result"],
-                ))
-                added += 1
-        db.commit()
-        print(f"[3/3] 维护记录 seed: 新增 {added} 条")
-    else:
-        print(f"[3/3] 维护记录已存在 {existing} 条，跳过 seed")
+    # ---- 3. seed 历史维护记录（按设备补齐，避免重复） ----
+    # ⚠️ 原逻辑是"整表为空才灌" —— 只要库里有任何一条就不灌。
+    #    后果：后来新增的设备（如 2026-10-17 加的三台水处理设备）永远拿不到
+    #    种子记录，点开维护记录是空列表。改为**逐设备按 record_id 补齐**，
+    #    既幂等，又不受"加设备"影响。
+    added = 0
+    for eid, records in _maintenance_seeds.items():
+        have = {rid for (rid,) in db.query(EquipmentMaintenanceRecord.record_id).filter(
+            EquipmentMaintenanceRecord.equipment_id == eid).all()}
+        for r in records:
+            if r["id"] in have:
+                continue
+            db.add(EquipmentMaintenanceRecord(
+                record_id=r["id"],
+                equipment_id=eid,
+                date=r["date"],
+                type=r["type"],
+                technician=r["technician"],
+                content=r["content"],
+                result=r["result"],
+            ))
+            added += 1
+    db.commit()
+    print(f"[3/3] 维护记录 seed: 本次新增 {added} 条")
 
     print("\n== 迁移后统计 ==")
     print("   equipment_assets            :", db.query(EquipmentAsset).count())

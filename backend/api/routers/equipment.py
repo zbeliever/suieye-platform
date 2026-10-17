@@ -116,6 +116,43 @@ _EQUIPMENT_BASELINE = {
         "install_date": "2024-05", "total_hours": 13900,
         "last_maintain": "2026-09-12", "mtbf_hours": 12000, "location_tag": "AG-601",
     },
+    # ── 水处理段（对应 water_readings 的 W3 / W5 站点）──
+    # ⚠️ 指标刻意与 water.py 的 WATER_STATIONS 基线对齐：尾矿池 flow 取 W3(320)、
+    #    回水池取 W5(810)，pH 取各自 base。这样 3D 上的读数与水质监测页对得上，
+    #    否则两页各说各话，演示被追问就穿帮了。
+    "tailings_pool": {
+        "name": "尾矿溢流水池", "type": "pool",
+        "desc": "尾矿浓密机溢流汇集池，SS 处理主战场，出水去回水系统",
+        "position": [9, 0, 6],
+        "base_metrics": {"temperature": 28.0, "vibration": 0.2, "power": 22, "rpm": 6, "flow_rate": 320},
+        "noise": {"temperature": 1.2, "vibration": 0.08, "power": 2, "rpm": 0.5, "flow_rate": 14},
+        "base_health": 83,
+        "model": "φ12m 辐流池", "manufacturer": "隆特重工",
+        "install_date": "2023-12", "total_hours": 16400,
+        "last_maintain": "2026-09-18", "mtbf_hours": 21000, "location_tag": "WP-701",
+    },
+    "water_return": {
+        "name": "回水池", "type": "pool",
+        "desc": "全厂回水汇合点，综合水质达标后回用于磨矿与浮选补水",
+        "position": [3, 0, 9.5],
+        "base_metrics": {"temperature": 26.5, "vibration": 0.3, "power": 55, "rpm": 1450, "flow_rate": 810},
+        "noise": {"temperature": 1.0, "vibration": 0.1, "power": 4, "rpm": 12, "flow_rate": 22},
+        "base_health": 91,
+        "model": "φ16m 蓄水池", "manufacturer": "自建",
+        "install_date": "2023-12", "total_hours": 16900,
+        "last_maintain": "2026-09-28", "mtbf_hours": 24000, "location_tag": "WP-702",
+    },
+    "water_dosing": {
+        "name": "水处理加药装置", "type": "dosing",
+        "desc": "PAM 絮凝剂配制与投加，控制溢流跑浑",
+        "position": [9.5, 0, 10.5],
+        "base_metrics": {"temperature": 31.0, "vibration": 1.1, "power": 12, "rpm": 320, "flow_rate": 48},
+        "noise": {"temperature": 1.5, "vibration": 0.25, "power": 2, "rpm": 10, "flow_rate": 4},
+        "base_health": 94,
+        "model": "PAM-2.0", "manufacturer": "烟台鑫海矿机",
+        "install_date": "2024-04", "total_hours": 11200,
+        "last_maintain": "2026-09-22", "mtbf_hours": 15000, "location_tag": "WP-703",
+    },
 }
 
 # ============================================================
@@ -151,6 +188,16 @@ _maintenance_seeds = {
     ],
     "agitator": [
         {"id": "M009", "date": "2026-09-12", "type": "定期保养", "technician": "赵工", "content": "更换搅拌轴密封件，检查叶轮磨损", "result": "正常"},
+    ],
+    "tailings_pool": [
+        {"id": "M010", "date": "2026-09-18", "type": "定期保养", "technician": "张工", "content": "清理池底积泥，检查出水堰板水平度", "result": "正常"},
+        {"id": "M011", "date": "2026-07-28", "type": "故障维修", "technician": "李工", "content": "溢流堰跑浑，排查为 PAM 投加泵堵塞，疏通后恢复", "result": "已修复"},
+    ],
+    "water_return": [
+        {"id": "M012", "date": "2026-09-28", "type": "定期保养", "technician": "赵工", "content": "回水泵检修，更换机械密封，清理吸水口格栅", "result": "正常"},
+    ],
+    "water_dosing": [
+        {"id": "M013", "date": "2026-09-22", "type": "定期保养", "technician": "王工", "content": "PAM 溶解罐清洗，校准计量泵行程", "result": "正常"},
     ],
 }
 # ============================================================

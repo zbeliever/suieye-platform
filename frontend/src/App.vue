@@ -5,12 +5,13 @@ import { ensureAlarmNotifications } from './api/ws'
 
 const route = useRoute()
 
-// 导航分组（核心运营 / 资产 / 系统），克制不堆砌
+// 导航分组（2026-10-17 重排：3D 作首页后，"设备监测"变"智能工厂总览"置顶）
 const navGroups = [
   {
     title: '运营',
     items: [
-      { path: '/', label: '直播墙', icon: 'VideoCamera' },
+      { path: '/', label: '智能工厂', icon: 'OfficeBuilding' },
+      { path: '/livewall', label: '直播墙', icon: 'VideoCamera' },
       { path: '/dashboard', label: '仪表盘', icon: 'DataLine' },
       { path: '/timemachine', label: '时光机', icon: 'Search' },
       { path: '/monitor', label: '实时监控', icon: 'VideoCameraFilled' },
@@ -20,7 +21,6 @@ const navGroups = [
   {
     title: '资产',
     items: [
-      { path: '/equipment', label: '设备监测', icon: 'Cpu' },
       { path: '/safety', label: '安全巡检', icon: 'Aim' },
       { path: '/water', label: '水质监测', icon: 'Drizzling' },
       { path: '/tailings', label: '尾矿处理', icon: 'Coordinate' },
@@ -38,6 +38,8 @@ const navGroups = [
 const currentPath = computed(() => {
   // 工作台高亮匹配前缀
   if (route.path.startsWith('/workbench')) return '/workbench/flotation'
+  // /equipment 已重定向到首页，高亮也跟着走
+  if (route.path === '/equipment') return '/'
   return route.path
 })
 

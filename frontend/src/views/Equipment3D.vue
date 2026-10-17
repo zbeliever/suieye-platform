@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, shallowRef, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
@@ -22,6 +23,7 @@ import {
 } from '../utils/equipDetails.js'
 
 // ── 页面状态 ────────────────────────────────────────
+const router = useRouter()
 const canvasContainer = ref(null)
 const selectedEquipment = ref(null)
 const trendChartRef = ref(null)
@@ -29,6 +31,146 @@ const repairFormRef = ref(null)
 const showLabels = ref(true)
 const autoRotate = ref(false)
 // （曾有一个 viewMode = ref('3d') 的残留，全文件无任何消费者，已删）
+
+// ══════════════════════════════════════════════════
+//  工艺流程分段（3D 首页的"点流程进功能"唯一真源）
+//
+//  设计原则：
+//   ① 段 = 真实工艺环节，不是页面分组。段内设备共享同一个功能落点，
+//      因为现场工程师的心智是"我在磨矿段"而不是"我在看粒度分析页"。
+//   ② 每段必须真有对应功能页 —— 没有页面的设备不单独成段，
+//      而是并入它服务的那一段（渣浆泵 → 浮选段，见 segOf 的 pump_1）。
+//   ③ 段的顺序 = 物料流向，与 3D 布局（北排→南排→水处理区）一致。
+// ══════════════════════════════════════════════════
+const PROCESS_SEGMENTS = [
+  {
+    id: 'grinding',
+    name: '磨矿段',
+    short: '磨矿',
+    // 磨矿是"矿浆的源头"，落点是粒度分析工作台
+    equipIds: ['ball_mill'],
+    route: '/workbench/grinding',
+    routeLabel: '粒度分析',
+    desc: '矿石经球磨机磨细至 -200 目占 70%，P80 决定后续浮选解离度',
+    color: '#165dff',
+  },
+  {
+    id: 'flotation',
+    name: '浮选段',
+    short: '浮选',
+    // ★ 渣浆泵并入本段：它的职责是"输送浮选给矿矿浆"（后端 desc 原文），
+    //   本身就是浮选的进料环节，没有任何以泵为主体的功能页。
+    //   单独成段会点不出东西 —— 那正是本次要消灭的"点了没反应"。
+    equipIds: ['flotation_1', 'flotation_2', 'agitator', 'pump_1'],
+    route: '/monitor',
+    routeLabel: '实时品位监控',
+    desc: '药剂搅拌后由渣浆泵送入浮选槽，粗选与扫选两段回收铅锌矿物',
+    color: '#00b42a',
+    primary: true,
+  },
+  {
+    id: 'concentrate',
+    name: '精矿输送',
+    short: '精矿',
+    equipIds: ['conveyor'],
+    route: '/safety',
+    routeLabel: '皮带安全巡检',
+    desc: '精矿经皮带输送机外运，沿线 4 路机位监测人员与皮带状态',
+    color: '#ff7d00',
+  },
+  {
+    id: 'tailings',
+    name: '尾矿与回水',
+    short: '尾矿回水',
+    // 尾矿到回水是连续的一条水线，合并成一段：
+    // 浓密机底流去尾矿库，溢流进汇集池再回用 —— 现场就是一条水系。
+    equipIds: ['thickener', 'tailings_pool', 'water_return', 'water_dosing'],
+    route: '/tailings',
+    routeLabel: '尾矿监测',
+    desc: '浓密机分离底流与溢流，溢流经汇集池澄清、加药后回用于磨矿补水',
+    color: '#722ed1',
+    // 段内还有第二个落点：水处理部分是独立的水质监测页
+    altRoute: { route: '/water', label: '水质监测', equipIds: ['tailings_pool', 'water_return', 'water_dosing'] },
+  },
+]
+
+/** 设备 → 所属工艺段（反向索引，O(1) 查） */
+const SEG_OF_EQUIP = (() => {
+  const m = new Map()
+  for (const seg of PROCESS_SEGMENTS) {
+    for (const eid of seg.equipIds) m.set(eid, seg)
+  }
+  return m
+})()
+
+/** 某台设备点「进入」时应跳哪个功能页
+ *  优先用段内更精确的 altRoute（如尾矿段里的水池 → 水质监测） */
+function routeFor(equipId) {
+  const seg = SEG_OF_EQUIP.get(equipId)
+  if (!seg) return null
+  if (seg.altRoute && seg.altRoute.equipIds.includes(equipId)) {
+    return { route: seg.altRoute.route, label: seg.altRoute.label, seg }
+  }
+  return { route: seg.route, label: seg.routeLabel, seg }
+}
+
+/** 当前选中设备所属的工艺段（驱动高亮与按钮文案） */
+const activeSegment = computed(() => {
+  const id = selectedEquipment.value?.id
+  return id ? (SEG_OF_EQUIP.get(id) || null) : null
+})
+
+/** 当前选中设备的跳转目标（undefined 时按钮不渲染） */
+const selectedRoute = computed(() => {
+  const id = selectedEquipment.value?.id
+  return id ? routeFor(id) : null
+})
+
+/** 右下设备清单折叠状态（默认收起：3D 画面才是主角） */
+const equipDockOpen = ref(false)
+
+/** 设备清单距底距离 = 操作日志实际高度 + 间距。
+ *  不能写死数值：日志面板高度随视口自适应（max-height:40vh），写死会在矮屏压住日志、
+ *  在高屏留出一道空缝。这里实测后回填，随 ResizeObserver 一起更新。 */
+const dockBottom = ref('206px')
+
+/** 日志显示条数：随视口高度收敛，矮屏只留 5 条，别让辅信息吃掉 3D 主体面积 */
+const viewH = ref(window.innerHeight)
+const logRows = computed(() => (viewH.value < 820 ? 5 : viewH.value < 960 ? 7 : 8))
+
+/** 每段的聚合工况（给 3D 上方的段位条用） */
+const segmentStats = computed(() => {
+  return PROCESS_SEGMENTS.map((seg) => {
+    const eqs = seg.equipIds
+      .map((eid) => equipments.value.find((e) => e.id === eid))
+      .filter(Boolean)
+    const avg = eqs.length
+      ? Math.round(eqs.reduce((s, e) => s + (e.health || 0), 0) / eqs.length)
+      : null
+    const bad = eqs.filter((e) => e.status === 'danger').length
+    const warn = eqs.filter((e) => e.status === 'warning').length
+    return { ...seg, count: eqs.length, avgHealth: avg, bad, warn }
+  })
+})
+
+/** 流程外功能：无法挂到 3D 工艺链上的独立能力
+ *
+ *  为什么这些必须放侧栏而不是 3D：
+ *   - 水位/水质是 W1~W5 五点位的整体系，3D 里只建了尾矿池与回水池两处实体，
+ *     点某一台池子只能代表它自己，代表不了全厂水质 → 需要独立入口。
+ *   - 报表 / 告警 / 配药 / 时光机 / 直播墙 都是"跨段视角"的功能，
+ *     不属于任何单一工艺环节，硬塞进某段会误导。
+ *   - 设置是系统级，与工艺无关。
+ */
+const sideTools = [
+  { path: '/water', label: '水质监测', desc: 'W1~W5 全五点 + 回用指数', icon: 'Drizzling' },
+  { path: '/alarms', label: '告警中心', desc: '分级处置与闭环', icon: 'Bell' },
+  { path: '/reports', label: '报表统计', desc: '品位趋势与告警分析', icon: 'Document' },
+  { path: '/dosing', label: '配药助手', desc: '药剂配比建议', icon: 'FirstAidKit' },
+  { path: '/timemachine', label: '工况时光机', desc: '历史记录回溯', icon: 'Search' },
+  { path: '/livewall', label: '直播墙', desc: '全流程总览大屏', icon: 'VideoCamera' },
+  { path: '/settings', label: '系统设置', desc: '场景与阈值配置', icon: 'Setting' },
+]
 
 // ── 弹窗状态 ────────────────────────────────────────
 const showTrendDialog = ref(false)
@@ -106,6 +248,7 @@ const equipmentStats = ref({ total: 0, running: 0, warning: 0, danger: 0, avg_he
 const lastUpdateTime = ref(null)
 const isLoading = ref(true)
 let refreshTimer = null
+let dockObserver = null   // 监听操作日志高度变化 → 同步设备清单位置
 const REFRESH_INTERVAL = 5000 // 5 秒刷新一次
 
 /**
@@ -626,6 +769,8 @@ async function refreshLogs() {
       operator: x.operator,
       type: x.type,
     }))
+    // 日志面板到这一刻才渲染出来 → 重新对齐设备清单高度
+    nextTick(syncDockBottom)
   } catch (e) {
     // 拉取失败时保留现有列表
   }
@@ -676,15 +821,31 @@ const FOG_COLOR = 0x121a24      // 雾色 = 地平线附近色，远处自然淡
  *  平均坐标会被它拽偏，所以这个值是看出来的、不是算出来的。 */
 const SCENE_CENTER = new THREE.Vector3(-0.5, 1.7, 0)
 
-/** 设备在厂区里的落位（视图层参数，不是业务数据） */
+/** 设备在厂区里的落位（视图层参数，不是业务数据）
+ *
+ *  布局逻辑 = 真实工艺流程的空间投影：
+ *    ① 北排（z=-5.5）：磨矿 → 输送 → 浮选选别  ——  球磨机(10.5) · 泵(5.0) · 1#槽(-0.5) · 2#槽(-6.0)
+ *    ② 南排（z=+5.5）：尾矿处理 → 水处理      ——  浓密机(-3.0) · 皮带(3.5) · 尾矿池(9.5)
+ *    ③ 药剂区（z≈0）：搅拌槽(-9.5) 单独在西侧，向两台浮选槽供药
+ *    ④ 回水区（z=+9.5~10.5）：回水池(3.5) · 加药装置(9.5) —— 水系统末端
+ *
+ *  ⚠️ 水处理设备必须往 **+z 方向（厂区南侧）** 排，不能塞进北排：
+ *     北排已有 4 台且 x 跨度 -6~10.5，再插进去会与浮选槽/泵重叠，
+ *     视觉上"两台设备焊在一起"。南排 z=+5.5 已有浓密机和皮带，
+ *     所以回水池进一步下压到 z=+9.5，形成第三排"水处理区"。
+ */
 const EQUIP_LAYOUT = {
-  ball_mill:   [ 10.5, 0, -5.5 ],
-  pump_1:      [  5.0, 0, -5.5 ],
-  flotation_1: [ -0.5, 0, -5.5 ],
-  flotation_2: [ -6.0, 0, -5.5 ],
-  thickener:   [ -3.0, 0,  5.5 ],
-  conveyor:    [  3.5, 0,  5.5 ],
-  agitator:    [ -9.5, 0,  0.0 ],
+  ball_mill:     [ 10.5, 0, -5.5 ],
+  pump_1:        [  5.0, 0, -5.5 ],
+  flotation_1:   [ -0.5, 0, -5.5 ],
+  flotation_2:   [ -6.0, 0, -5.5 ],
+  thickener:     [ -3.0, 0,  5.5 ],
+  conveyor:      [  3.5, 0,  5.5 ],
+  agitator:      [ -9.5, 0,  0.0 ],
+  // ── 水处理区（南侧第三排）──
+  tailings_pool: [  9.5, 0,  5.5 ],   // 尾矿浓密机溢流汇集池，承接浓密机来水
+  water_return:  [  3.5, 0,  9.5 ],   // 回水池，全厂回水汇合
+  water_dosing:  [  9.5, 0, 10.0 ],   // 加药装置，紧邻尾矿池给 PAM
 }
 /** 取设备在 3D 里的坐标（优先布局表，其次后端 position，最后原点） */
 function equipPos(id, equip) {
@@ -1568,6 +1729,211 @@ function createAgitator(equip) {
   return group
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  水处理段设备（2026-10-17 新增，把水系统接入工艺链）
+//  对应后端 water.py 的 W3(尾矿浓密溢流) / W5(回水池) 站点，
+//  以及 PAM 投加（W3 的 focus 里明确写了"PAM 残留"）。
+// ══════════════════════════════════════════════════════════════════
+
+/** 创建辐流式水池（尾矿溢流水池 / 回水池共用）
+ *
+ *  为什么做成"半敞开 + 可见水面"而不是封闭罐：
+ *  水处理池在真实厂区就是敞口砼池，一眼能认出"这是池子不是反应罐"；
+ *  而且水面能承载波动动画，与浓密机的液面共用同一套 liquidSurfaces 机制。
+ *
+ *  ⚠️ 池壁用 CylinderGeometry 的 openEnded=false 会变成一个实心柱，
+ *     看起来就是个水泥墩子。必须用 openEnded=true 并单独加底，
+ *     否则内部水面被池壁完全遮住 —— 那就白做了一个池子。
+ */
+function createWaterPool(equip, opts = {}) {
+  const group = new THREE.Group()
+  const R = opts.radius || 2.6          // 池半径
+  const H = opts.height || 1.5          // 池深（池壁高）
+  const waterR = R - 0.18               // 水面半径（略小于池壁内径）
+
+  // ① 池壁：开口圆柱 + 双面渲染（内壁也要看得见）
+  const wallMat = new THREE.MeshPhongMaterial({
+    color: 0x8d9aa5, shininess: 18, side: THREE.DoubleSide,
+  })
+  const wall = new THREE.Mesh(
+    new THREE.CylinderGeometry(R, R, H, 48, 1, true), wallMat)
+  wall.position.y = H / 2
+  wall.castShadow = true
+  group.add(wall)
+
+  // ② 池底
+  const bottom = new THREE.Mesh(
+    new THREE.CylinderGeometry(R, R, 0.12, 48), wallMat)
+  bottom.position.y = 0.06
+  group.add(bottom)
+
+  // ③ 池壁顶圈（带厚度，池沿才不"纸片"）
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(R, 0.09, 10, 56),
+    new THREE.MeshPhongMaterial({ color: 0x9eabb5, shininess: 40 }))
+  rim.rotation.x = Math.PI / 2
+  rim.position.y = H
+  group.add(rim)
+
+  // ④ 水面（波动，复用浓密机的机制）
+  const waterY = H * 0.72
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(waterR * 2, waterR * 2, 14, 14),
+    new THREE.MeshPhongMaterial({
+      color: opts.waterColor || 0x2f4858, transparent: true, opacity: 0.82,
+      shininess: 90, side: THREE.DoubleSide, depthWrite: false,
+    }))
+  water.rotation.x = -Math.PI / 2
+  water.position.y = waterY
+  water.renderOrder = 2
+  group.add(water)
+  liquidSurfaces.push({ mesh: water, baseY: waterY, phase: Math.random() * 6.28, amp: 0.035, k: 1, equipId: equip.id })
+
+  // ⑤ 出水堰 + 锯齿堰板（池子的标志性细节，也解释"水从哪出去"）
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2
+    const tooth = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 0.18, 0.04),
+      new THREE.MeshPhongMaterial({ color: 0x9eabb5 }))
+    tooth.position.set(Math.cos(a) * (R - 0.1), H + 0.1, Math.sin(a) * (R - 0.1))
+    tooth.rotation.y = -a
+    group.add(tooth)
+  }
+
+  // ⑥ 走道 + 护栏 + 爬梯（合批）
+  const galv = []
+  const steel = []
+  const dark = []
+  const walkY = H + 0.02
+  addGeos(galv, platformGeos(R * 2 + 0.5, 0.8), P([0, walkY, 0]))
+  addGeos(galv, railingGeos(R * 2 + 0.5, { h: 1.05, posts: 7 }), P([0, walkY, 0.42]))
+  addGeos(galv, ladderGeos(walkY, { w: 0.45, rungs: 7, cage: true }), P([R + 0.15, 0, 0]))
+  // ⑦ 进水 / 出水管（配对法兰，说明这池子有来水有去水）
+  addGeos(steel, cylGeos(0.14, 1.4, [-R - 0.6, 0.7, 0], [0, 0, Math.PI / 2]))
+  addGeos(steel, flangePairGeos(0.17, { t: 0.05, bolts: 8 }), P([-R - 0.1, 0.7, 0], [0, 0, Math.PI / 2]))
+  addGeos(steel, cylGeos(0.12, 1.2, [R + 0.5, 0.55, 0], [0, 0, Math.PI / 2]))
+  // ⑧ 池边阀门 + 手轮
+  addGeos(dark, cylGeos(0.13, 0.26, [R + 0.5, 0.55, 0], [0, 0, Math.PI / 2]))
+  addGeos(steel, cylGeos(0.035, 0.28, [R + 0.5, 0.75, 0]))
+  addGeos(dark, handwheelGeos(0.17), P([R + 0.5, 0.9, 0]))
+
+  const galvMesh = cluster(galv, DETAIL_MAT.galv, 'detail-galv')
+  if (galvMesh) group.add(galvMesh)
+  const steelMesh = cluster(steel, DETAIL_MAT.steel, 'detail-steel')
+  if (steelMesh) group.add(steelMesh)
+  const darkMesh = cluster(dark, DETAIL_MAT.dark, 'detail-dark')
+  if (darkMesh) group.add(darkMesh)
+
+  // ⑨ 铭牌 + 警示条：贴在池壁正面（池壁够高，读得清）
+  const plate = nameplateMesh(`${equip.name} · ${equip.location_tag || ''}`, 0.9, 0.22)
+  plate.position.set(0, H * 0.62, R + 0.02)
+  group.add(plate)
+  const stripe = hazardStripeMesh(0.8, 0.02, 0.1)
+  stripe.position.set(0, H * 0.42, R + 0.02)
+  group.add(stripe)
+
+  addStatusLight(group, equip.status, H + 1.5)
+  group.userData = { equipId: equip.id, equip }
+  return group
+}
+
+/** 创建水处理加药装置：溶解罐 + 计量泵 + 药剂桶
+ *
+ *  真实 PAM 加药系统 = 溶解罐（带搅拌）+ 计量泵 + 药剂储存。
+ *  做成"罐 + 泵 + 桶"三件套，才不会被误认成又一个搅拌槽
+ *  （场景里已有 agitator，两个如果长得一样就分不清谁是干什么的）。
+ */
+function createDosingUnit(equip) {
+  const group = new THREE.Group()
+
+  // ① 溶解罐（带锥顶，与搅拌槽的圆柱+锥底区分开）
+  const tankMat = new THREE.MeshPhongMaterial({
+    color: 0x7e8c99, transparent: true, opacity: 0.85, shininess: 45,
+  })
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 1.7, 28), tankMat)
+  tank.position.y = 1.15
+  tank.castShadow = true
+  group.add(tank)
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.97, 0.42, 28), tankMat)
+  cone.position.y = 2.21
+  group.add(cone)
+
+  // ② 罐顶搅拌电机（小，PAM 溶解转速低）
+  const motor = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.2, 0.42, 16),
+    new THREE.MeshPhongMaterial({ color: 0x4a5a6a, shininess: 60 }))
+  motor.position.y = 2.62
+  group.add(motor)
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.045, 0.045, 1.5, 10),
+    new THREE.MeshPhongMaterial({ color: 0xcfd8dc, shininess: 80 }))
+  shaft.position.y = 1.2
+  group.add(shaft)
+  rotatingParts.push({ mesh: shaft, axis: 'y', speed: 0.02, equipId: equip.id })
+
+  // ③ 计量泵（隔膜泵，横卧小电机 + 泵头）
+  const pumpHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.26, 18, 14),
+    new THREE.MeshPhongMaterial({ color: 0x4db6ac, shininess: 70 }))
+  pumpHead.position.set(1.75, 0.42, 0)
+  group.add(pumpHead)
+  const pumpMotor = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.2, 0.55, 16),
+    new THREE.MeshPhongMaterial({ color: 0x5c6bc0, shininess: 60 }))
+  pumpMotor.rotation.z = Math.PI / 2
+  pumpMotor.position.set(2.45, 0.42, 0)
+  group.add(pumpMotor)
+
+  // ④ 药剂桶（PAM 干粉桶，小圆桶 + 盖）
+  const drum = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.34, 0.34, 0.72, 20),
+    new THREE.MeshPhongMaterial({ color: 0x1565c0, shininess: 30 }))
+  drum.position.set(-1.5, 0.42, 0.55)
+  group.add(drum)
+  const lid = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.36, 0.36, 0.06, 20),
+    new THREE.MeshPhongMaterial({ color: 0x0d47a1 }))
+  lid.position.set(-1.5, 0.81, 0.55)
+  group.add(lid)
+
+  // ⑤ 工业细节合批
+  const steel = []
+  const galv = []
+  const dark = []
+  // 罐壁人孔 + 液位计
+  addGeos(steel, flangeGeos(0.2, { t: 0.05, bolts: 8 }), P([0, 1.3, 0.95], [Math.PI / 2, 0, 0]))
+  addGeos(galv, cylGeos(0.05, 1.5, [0.98, 1.25, 0]))
+  // 罐底出料管 + 计量泵接管
+  addGeos(steel, cylGeos(0.075, 0.9, [0.7, 0.3, 0], [0, 0, Math.PI / 2]))
+  addGeos(steel, flangePairGeos(0.09, { t: 0.04, bolts: 6 }), P([1.15, 0.3, 0], [0, 0, Math.PI / 2]))
+  addGeos(steel, cylGeos(0.06, 0.7, [2.1, 0.42, 0], [0, 0, Math.PI / 2]))
+  // 泵底座 + 罐底支座
+  addGeos(dark, blockGeos(1.2, 0.3, 0.6, [2.05, 0.2, 0]))
+  addGeos(dark, blockGeos(1.6, 0.24, 1.6, [0, 0.16, 0]))
+  // 计量泵压力表
+  addGeos(galv, cylGeos(0.025, 0.26, [1.75, 0.72, 0]))
+  addGeos(galv, cylGeos(0.09, 0.05, [1.75, 0.86, 0]))
+
+  const steelMesh = cluster(steel, DETAIL_MAT.steel, 'detail-steel')
+  if (steelMesh) group.add(steelMesh)
+  const galvMesh = cluster(galv, DETAIL_MAT.galv, 'detail-galv')
+  if (galvMesh) group.add(galvMesh)
+  const darkMesh = cluster(dark, DETAIL_MAT.dark, 'detail-dark')
+  if (darkMesh) group.add(darkMesh)
+
+  // ⑥ 铭牌 + 警示条
+  const plate = nameplateMesh(`${equip.name} · ${equip.location_tag || ''}`, 0.85, 0.2)
+  plate.position.set(0, 0.9, 0.96)
+  group.add(plate)
+  const stripe = hazardStripeMesh(0.75, 0.02, 0.1)
+  stripe.position.set(0, 0.7, 0.96)
+  group.add(stripe)
+
+  addStatusLight(group, equip.status, 3.1)
+  group.userData = { equipId: equip.id, equip }
+  return group
+}
+
 // ── 辅助函数 ───────────────────────────────────────
 
 /** 在设备顶部添加状态指示灯 */
@@ -1646,6 +2012,11 @@ function createEquipmentModel(equip) {
     case 'conveyor':  return createConveyor(equip)
     case 'thickener': return createThickener(equip)
     case 'agitator':  return createAgitator(equip)
+    // 水处理段：两个池子体量不同（尾矿溢流池小、回水池大），靠 id 区分尺度
+    case 'pool':      return createWaterPool(equip, equip.id === 'water_return'
+      ? { radius: 3.0, height: 1.7, waterColor: 0x2a5566 }
+      : { radius: 2.4, height: 1.4, waterColor: 0x33414d })
+    case 'dosing':    return createDosingUnit(equip)
     default:          return createFlotationCell(equip)
   }
 }
@@ -2119,6 +2490,8 @@ function bloomVector(w, h) {
 function createPipelines() {
   const baseMat = new THREE.MeshStandardMaterial({ color: 0xc0cfdb, transparent: true, opacity: 0.72, roughness: 0.24, metalness: 0.9 })
   // fromId/toId = 这条管线的上下游设备，供"选中设备高亮物料链"使用
+  // ⚠️ 顺序有意义：highlightPipelines 靠 fromId/toId 推导上下游，
+  //    新增水处理链时要保证"上游→下游"方向正确，否则高亮会反。
   const flows = [
     { fromId: 'ball_mill',   toId: 'pump_1',      mat: 0xa1887f, media: '矿浆' },
     { fromId: 'pump_1',      toId: 'flotation_1', mat: 0xa1887f, media: '矿浆' },
@@ -2127,6 +2500,12 @@ function createPipelines() {
     { fromId: 'thickener',   toId: 'conveyor',    mat: 0xb0bec5, media: '底流' },
     { fromId: 'agitator',    toId: 'flotation_1', mat: 0x81c784, media: '药剂' },
     { fromId: 'agitator',    toId: 'flotation_2', mat: 0x81c784, media: '药剂' },
+    // ── 水处理链（尾矿溢流 → 汇集池 → 回水池 → 回用补水）──
+    { fromId: 'thickener',     toId: 'tailings_pool', mat: 0x64b5f6, media: '溢流' },
+    { fromId: 'tailings_pool', toId: 'water_return',  mat: 0x64b5f6, media: '澄清水' },
+    { fromId: 'water_dosing',  toId: 'tailings_pool', mat: 0x81c784, media: 'PAM' },
+    // 回水回用于磨矿补水（闭环：水从尾矿回到磨矿，这是"回用"的物理含义）
+    { fromId: 'water_return',  toId: 'ball_mill',     mat: 0x4dd0e1, media: '回水' },
   ]
   flows.forEach(f => {
     const s = new THREE.Vector3(...equipPos(f.fromId))
@@ -2548,13 +2927,17 @@ function highlightPipelines(equipId) {
 /** 每台设备的观测机位（az 方位角° / el 仰角° / dist 距离）
  *  角度原则：从厂区**外侧**看，否则视线会穿过中间的浮选槽把目标挡住 */
 const CAM_VIEWS = {
-  ball_mill:   { az: 38,  el: 24, dist: 13 },   // 长筒体，斜侧看才看得见衬板与端盖
-  flotation_1: { az: 46,  el: 28, dist: 10 },
-  flotation_2: { az: 132, el: 28, dist: 10 },
-  pump_1:      { az: 64,  el: 24, dist: 10 },
-  conveyor:    { az: 252, el: 22, dist: 12 },   // 长胶带，从厂区外侧看流向
-  thickener:   { az: 34,  el: 32, dist: 11 },   // 圆柱池体，俯视看池面
-  agitator:    { az: 200, el: 26, dist: 10 },
+  ball_mill:     { az: 38,  el: 24, dist: 13 },   // 长筒体，斜侧看才看得见衬板与端盖
+  flotation_1:   { az: 46,  el: 28, dist: 10 },
+  flotation_2:   { az: 132, el: 28, dist: 10 },
+  pump_1:        { az: 64,  el: 24, dist: 10 },
+  conveyor:      { az: 252, el: 22, dist: 12 },   // 长胶带，从厂区外侧看流向
+  thickener:     { az: 34,  el: 32, dist: 11 },   // 圆柱池体，俯视看池面
+  agitator:      { az: 200, el: 26, dist: 10 },
+  // 水处理池：抬高俯角才看得见水面（el 低于 28 会被池壁挡住）
+  tailings_pool: { az: 318, el: 38, dist: 11 },
+  water_return:  { az: 300, el: 40, dist: 13 },
+  water_dosing:  { az: 330, el: 26, dist: 9 },
 }
 
 /** 飞到某台设备的机位 */
@@ -2938,6 +3321,30 @@ function focusEquipment(id) {
   highlightEquipment(id)
 }
 
+/** 进入当前选中设备对应的功能页
+ *
+ *  为什么是"显式按钮"而不是"再点一次设备就跳"：
+ *  单击跳转会让人不敢点设备看读数（这是 3D 首页最高频的动作），
+ *  而且视角重叠时容易误触。按钮把"看"和"进"两件事分开，
+ *  也不需要用户去猜"再点一次会发生什么"。
+ */
+function enterSegment(equipId) {
+  const target = routeFor(equipId || selectedEquipment.value?.id)
+  if (!target) return
+  router.push(target.route)
+}
+
+/** 点击段位条：飞到该段第一台设备并选中，再给用户看详情 */
+function focusSegment(seg) {
+  const first = seg.equipIds.find((eid) => equipmentMeshes.has(eid))
+  if (first) focusEquipment(first)
+}
+
+/** 直接进入某段的功能页（段位条上的"进入"快捷入口） */
+function enterSegmentDirect(seg) {
+  router.push(seg.route)
+}
+
 /** 相机运动的"世代号"：任何新的镜头/轴心动作一开，旧动画自动失效。
  *  否则「刚点设备卡（900ms 飞行）→ 立刻点空白取消选中」会让两个动画同时写
  *  camera.position / controls.target，画面抖一下且最终落点不确定。 */
@@ -3139,12 +3546,47 @@ onMounted(() => {
     canvasContainer.value.addEventListener('mouseleave', onMouseLeave)
   }
   window.addEventListener('resize', onResize)
+
+  // 设备清单贴住操作日志上沿（日志高度随视口自适应，必须实测而非写死）
+  nextTick(() => {
+    syncDockBottom()
+    if (window.ResizeObserver) {
+      dockObserver = new ResizeObserver(syncDockBottom)
+      // 日志面板可能还没渲染，轮询到它出现再挂观察者
+      const tryObserve = (left = 12) => {
+        const logEl = document.querySelector('.op-log-panel')
+        if (logEl) dockObserver.observe(logEl)
+        else if (left > 0) setTimeout(() => tryObserve(left - 1), 400)
+      }
+      tryObserve()
+    }
+  })
 })
+
+/** 实测操作日志面板高度 → 把设备清单顶到它上方。
+ *  ★★ 两个坑（都靠实测数值才暴露，肉眼看截图分辨不出来）：
+ *   1) 选择器范围：`.op-log-panel` 挂在 `.main-layout` 下，**不在 `.viewport` 里**。
+ *      早期写成 canvasContainer.querySelector(...) 永远查不到 → 一直回落 12px → 压住日志。
+ *      这里改用整页查询。
+ *   2) 时序：日志面板是 v-if="operationLogs.length" 渲染的，首帧还不存在。
+ *      必须轮询等它出现再测，否则同样回落成 12px。 */
+let dockRetry = 0
+function syncDockBottom() {
+  const logEl = document.querySelector('.op-log-panel')
+  if (!logEl) {
+    dockBottom.value = '12px'
+    if (dockRetry < 10) { dockRetry += 1; setTimeout(syncDockBottom, 400) }
+    return
+  }
+  dockRetry = 0
+  dockBottom.value = `${Math.round(logEl.getBoundingClientRect().height) + 22}px`
+}
 
 onBeforeUnmount(() => {
   if (animationId) cancelAnimationFrame(animationId)
   if (refreshTimer) clearInterval(refreshTimer)
   window.removeEventListener('resize', onResize)
+  if (dockObserver) { dockObserver.disconnect(); dockObserver = null }
   if (canvasContainer.value) {
     canvasContainer.value.removeEventListener('click', onMouseClick)
     canvasContainer.value.removeEventListener('mousemove', onMouseMove)
@@ -3162,6 +3604,8 @@ onBeforeUnmount(() => {
 })
 
 function onResize() {
+  viewH.value = window.innerHeight
+  syncDockBottom()
   if (!canvasContainer.value || !camera || !renderer || !labelRenderer) return
   const w = canvasContainer.value.clientWidth
   const h = canvasContainer.value.clientHeight
@@ -3257,33 +3701,49 @@ function healthColor(h) {
 
     <!-- ══ 主内容区 ══ -->
     <div class="main-layout">
-      <!-- 左侧设备列表面板 -->
+      <!-- 左侧内栏：流程外功能入口（3D 工艺链覆盖不到的功能都收在这里） -->
       <div class="side-panel">
-        <div class="panel-header">设备列表</div>
-        <div class="equip-list">
-          <div
-            v-for="(eq, idx) in equipments"
-            :key="eq.id"
-            class="equip-card"
-            :class="[`card-${eq.status}`, { active: selectedEquipment?.id === eq.id, hovered: hoveredId === eq.id }]"
-            @click="focusEquipment(eq.id)"
-          >
-            <div class="card-status-dot" :class="`dot-${eq.status}`"></div>
-            <div class="card-info">
-              <div class="card-name">
-                <span class="card-idx">{{ String(idx + 1).padStart(2, '0') }}</span>{{ eq.name }}
+        <div class="panel-header">功能导航</div>
+        <div class="side-scroll">
+          <!-- 一、工艺段：与 3D 流程对应，点一下直接进 -->
+          <div class="side-group">
+            <div class="side-group-title">工艺流程</div>
+            <div
+              v-for="seg in segmentStats"
+              :key="seg.id"
+              class="seg-item"
+              :class="{ 'is-primary': seg.primary, 'is-active': activeSegment?.id === seg.id }"
+              @click="focusSegment(seg)"
+            >
+              <i class="seg-bar" :style="{ background: seg.color }"></i>
+              <div class="seg-body">
+                <div class="seg-row">
+                  <span class="seg-name">{{ seg.name }}</span>
+                  <span v-if="seg.count" class="seg-health">{{ seg.avgHealth ?? '—' }}<em>%</em></span>
+                </div>
+                <div class="seg-meta">
+                  <span>{{ seg.count }} 台</span>
+                  <span v-if="seg.bad" class="seg-bad">{{ seg.bad }} 故障</span>
+                  <span v-else-if="seg.warn" class="seg-warn">{{ seg.warn }} 预警</span>
+                  <span v-else class="seg-ok">正常</span>
+                </div>
               </div>
-              <div class="card-type">{{ typeNames[eq.type] }}</div>
+              <el-icon class="seg-arrow" title="进入该段功能" @click.stop="enterSegmentDirect(seg)">
+                <ArrowRight />
+              </el-icon>
             </div>
-            <div class="card-health">
-              <el-progress
-                :percentage="eq.health"
-                :stroke-width="6"
-                :color="healthColor(eq.health)"
-                :show-text="false"
-              />
-              <span class="health-num">{{ eq.health }}%</span>
-            </div>
+          </div>
+
+          <!-- 二、流程外功能：无法挂在工艺链上的独立能力 -->
+          <div class="side-group">
+            <div class="side-group-title">独立功能</div>
+            <router-link v-for="item in sideTools" :key="item.path" :to="item.path" class="tool-item">
+              <el-icon class="tool-icon"><component :is="item.icon" /></el-icon>
+              <div class="tool-body">
+                <span class="tool-name">{{ item.label }}</span>
+                <span class="tool-desc">{{ item.desc }}</span>
+              </div>
+            </router-link>
           </div>
         </div>
       </div>
@@ -3374,6 +3834,20 @@ function healthColor(h) {
             </div>
             <p class="detail-desc">{{ selectedEquipment.desc }}</p>
 
+            <!-- ★ 主行动：进入本设备所属工艺段的功能页。
+                 必须放在**面板最顶部、滚动区之外** —— 它是 3D 首页的核心用途，
+                 而面板内容（画像/指标/预测维护/图表）在 768 高度下必然要滚，
+                 放在底部就等于"要滚到底才看得见"，等于主功能藏在角落里。 -->
+            <button
+              v-if="selectedRoute"
+              class="detail-cta"
+              :style="{ '--cta': activeSegment?.color || '#165dff' }"
+              @click="enterSegment(selectedEquipment.id)"
+            >
+              <span class="cta-text">进入{{ selectedRoute.label }}</span>
+              <span class="cta-arrow">›</span>
+            </button>
+
             <!-- 设备画像 -->
             <div class="equip-profile">
               <div class="profile-row"><span class="pl">型号</span><span class="pv">{{ selectedEquipment.model || '—' }}</span></div>
@@ -3456,7 +3930,7 @@ function healthColor(h) {
 
             <!-- 操作按钮 -->
             <div class="detail-actions">
-              <el-button size="small" type="primary" @click="showTrend(selectedEquipment)">
+              <el-button size="small" @click="showTrend(selectedEquipment)">
                 查看趋势
               </el-button>
               <el-button size="small" @click="showMaintenance(selectedEquipment)">
@@ -3476,6 +3950,30 @@ function healthColor(h) {
           </div>
         </transition>
 
+        <!-- 设备列表（右下折叠）：3D 里找一台具体设备时仍需要清单，
+             但它是辅助工具，不该占用左侧黄金位置 -->
+        <div class="equip-dock" :class="{ 'is-open': equipDockOpen }" :style="{ bottom: dockBottom }">
+          <button class="dock-toggle" @click="equipDockOpen = !equipDockOpen">
+            <el-icon><component :is="equipDockOpen ? 'ArrowDown' : 'ArrowUp'" /></el-icon>
+            <span>设备清单</span>
+            <em>{{ equipments.length }}</em>
+          </button>
+          <div v-show="equipDockOpen" class="dock-list">
+            <div
+              v-for="(eq, idx) in equipments"
+              :key="eq.id"
+              class="dock-card"
+              :class="{ active: selectedEquipment?.id === eq.id, hovered: hoveredId === eq.id }"
+              @click="focusEquipment(eq.id)"
+            >
+              <i class="card-status-dot" :class="`dot-${eq.status}`"></i>
+              <span class="dock-idx">{{ String(idx + 1).padStart(2, '0') }}</span>
+              <span class="dock-name">{{ eq.name }}</span>
+              <span class="dock-health" :style="{ color: healthColor(eq.health) }">{{ eq.health }}%</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 视图提示 -->
         <div class="view-hint">
           拖拽旋转 · 滚轮缩放 · 点击设备查看详情 · 点左侧列表飞向机位并高亮物料链
@@ -3486,7 +3984,7 @@ function healthColor(h) {
       <div class="op-log-panel" v-if="operationLogs.length">
         <div class="log-header">操作日志</div>
         <div class="log-list">
-          <div v-for="(log, idx) in operationLogs.slice(0, 8)" :key="idx" class="log-item" :class="`log-${log.type}`">
+          <div v-for="(log, idx) in operationLogs.slice(0, logRows)" :key="idx" class="log-item" :class="`log-${log.type}`">
             <span class="log-time">{{ log.time }}</span>
             <span class="log-action">{{ log.action }}</span>
           </div>
@@ -3800,6 +4298,8 @@ const typeNames = {
   conveyor: '皮带机',
   thickener: '浓密机',
   agitator: '搅拌槽',
+  pool: '水处理池',
+  dosing: '加药装置',
 }
 </script>
 
@@ -3842,64 +4342,146 @@ const typeNames = {
   min-height: 0;
 }
 
-/* ── 左侧面板 ── */
+/* ── 左侧内栏：功能导航 ── */
 .side-panel {
-  width: 220px;
+  width: 240px;
   background: #fff;
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
+  /* ★ 必须裁切 + 圆角落在外层：否则 .side-scroll 的内容会越过圆角描边。
+     （滚动由 .side-scroll 负责，外层裁的是它的容器轮廓，不影响滚动） */
   overflow: hidden;
   flex-shrink: 0;
 }
 .panel-header {
-  padding: 12px 14px;
+  flex-shrink: 0;
+  padding: 11px 14px;
   font-size: 13px;
   font-weight: 600;
   color: #607d8b;
   border-bottom: 1px solid #eee;
   background: #ffffff;
 }
-.equip-list {
+.side-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  /* ★ 768 高度下内容比容器高约 4px —— 恰好触发一条滚动条，
+     而这条滚动条除了"看起来有东西没显示完"没有任何信息量。
+     收紧 padding 把这 4px 吃掉，1366x768 下不再出滚动条。 */
+  padding: 8px 8px 10px;
+  min-height: 0;
+  scrollbar-width: thin;
 }
-.equip-card {
+/* 仅在真的需要时才露出滚动条（内容真的超了），避免细微误差带来的视觉噪音 */
+.side-scroll::-webkit-scrollbar { width: 6px; }
+.side-scroll::-webkit-scrollbar-thumb {
+  background: #d6dbe3; border-radius: 3px;
+}
+.side-scroll::-webkit-scrollbar-track { background: transparent; }
+.side-group { margin-bottom: 12px; }
+.side-group:last-child { margin-bottom: 0; }
+.side-group-title {
+  font-size: 11px;
+  color: #99a3ae;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 0 6px 6px;
+}
+
+/* 工艺段条目：色条 + 名称/工况 + 快捷进入
+   ⚠️ 行内用 grid 而非 space-between：
+      space-between 在段名较短（"浮选段"）时会把健康度推到最右，
+      中间留出大片空白，读起来像两列脱节的数据。 */
+.seg-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 10px;
+  align-items: stretch;
+  padding: 6px 6px 6px 0;
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid transparent;
-  margin-bottom: 4px;
+  transition: background 0.18s;
+  margin-bottom: 1px;
 }
-.equip-card:hover { background: #f7f8fa; }
-/* 3D 里悬停某台设备 → 列表对应卡片同步亮起（两边一起说"就是这台"） */
-.equip-card.hovered {
-  background: #eef4ff;
-  border-color: rgba(22, 93, 255, 0.45);
+.seg-item:hover { background: #f5f8ff; }
+.seg-item.is-active { background: #eef4ff; box-shadow: inset 0 0 0 1px rgba(22,93,255,0.28); }
+.seg-bar {
+  width: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  margin-right: 9px;
 }
-.equip-card.active {
-  background: #e8f0fe;
-  border-color: #4a90d9;
+.seg-body { flex: 1; min-width: 0; }
+.seg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 8px;
 }
-/* 列表里的编号与 3D 标签上的序号同源，跨视图对得上号 */
-.card-idx {
-  display: inline-block;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  color: #7a8699;
-  background: #f2f3f5;
-  border-radius: 3px;
-  padding: 0 4px;
-  margin-right: 5px;
-  vertical-align: 1px;
+.seg-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2b3648;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.seg-item.is-primary .seg-name { color: #165dff; }
+.seg-health {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5c6b7f;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.seg-health em { font-style: normal; font-size: 10px; color: #98a2b0; margin-left: 1px; }
+.seg-meta {
+  display: flex;
+  gap: 7px;
+  font-size: 11px;
+  color: #9aa4b1;
+  margin-top: 2px;
+}
+.seg-bad { color: #f53f3f; font-weight: 600; }
+.seg-warn { color: #ff7d00; font-weight: 600; }
+.seg-ok { color: #00b42a; }
+/* 进入箭头：贴在最右，hover 才显眼（避免每条都抢注意力） */
+.seg-arrow {
+  align-self: center;
+  font-size: 12px;
+  color: #c2cad4;
+  flex-shrink: 0;
+  margin-left: 2px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.18s, background 0.18s;
+}
+.seg-item:hover .seg-arrow { color: #165dff; background: #e8f0fe; }
+
+/* 独立功能条目 */
+.tool-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.18s;
+  text-decoration: none;
+}
+.tool-item:hover { background: #f7f8fa; text-decoration: none; }
+.tool-icon { font-size: 15px; color: #7a8699; flex-shrink: 0; }
+.tool-body { display: flex; flex-direction: column; min-width: 0; }
+.tool-name { font-size: 13px; color: #2b3648; font-weight: 500; }
+.tool-desc {
+  font-size: 11px;
+  color: #a3adb9;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 设备状态点（沿用旧样式，被折叠清单复用） */
 .card-status-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
 }
@@ -3911,11 +4493,78 @@ const typeNames = {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(1.3); }
 }
-.card-info { flex: 1; min-width: 0; }
-.card-name { font-size: 13px; font-weight: 600; color: #333; }
-.card-type { font-size: 11px; color: #999; margin-top: 1px; }
-.card-health { display: flex; align-items: center; gap: 6px; width: 56px; }
-.health-num { font-size: 11px; color: #666; width: 32px; text-align: right; }
+
+/* ── 右下设备清单（折叠）──
+   ⚠️ 必须落在操作日志面板（.op-log-panel，bottom:12 right:12 宽 260）的**上方**。
+      两者都靠右下，早期版本 bottom:14 直接压住日志文字，日志被遮掉大半行。
+      这里用 bottom:206 抬到日志实际高度（约 196）之上，并右对齐到同一列。 */
+.equip-dock {
+  position: absolute;
+  right: 12px;
+  bottom: 206px;
+  width: 260px;
+  background: rgba(20, 24, 31, 0.88);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+  z-index: 13;
+  /* ★ 展开时整体高度受视口约束，超出的部分由 .dock-list 自己滚 ——
+     否则 10 台设备会把面板顶到视口之外，连折叠按钮都点不到（收不回去）。 */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 226px);
+}
+.dock-toggle {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  color: #cfd8e3;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dock-toggle:hover { background: rgba(255,255,255,0.06); }
+.dock-toggle span { flex: 1; text-align: left; }
+.dock-toggle em {
+  font-style: normal;
+  font-size: 11px;
+  color: #94a3b4;
+  background: rgba(255,255,255,0.08);
+  padding: 0 5px;
+  border-radius: 8px;
+}
+.dock-list {
+  flex: 1;
+  min-height: 0;          /* ★ flex 子项必须给 0，否则 overflow 不生效 */
+  max-height: 232px;
+  overflow-y: auto;
+  padding: 4px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.dock-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.16s;
+}
+.dock-card:hover { background: rgba(255,255,255,0.08); }
+.dock-card.active { background: rgba(22,93,255,0.28); }
+.dock-idx {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: #7d8b9c;
+}
+.dock-name { flex: 1; font-size: 12px; color: #dbe3ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-health { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ── 3D 视口 ── */
 .viewport {
@@ -3999,17 +4648,18 @@ const typeNames = {
 .detail-panel {
   position: absolute;
   top: 16px;
-  right: 16px;
+  /* ★ 右边界必须让开右下角两件浮层（设备清单 + 操作日志，都右对齐 right:12 宽 260）：
+     早期 right:16 让详情面板与它们**完全重叠**，选中设备时三块面板叠成一团看不清。
+     这里右移 284px（= 260 宽 + 12 边距 + 12 间隙），详情面板独占右侧「内列」。 */
+  right: 284px;
   width: 300px;
   background: rgba(255,255,255,0.96);
   backdrop-filter: blur(12px);
   border-radius: 8px;
   box-shadow: var(--shadow-lg);
   padding: 18px;
-  /* ★ z-index 必须高于 .op-log-panel（10）。两个面板都右对齐：详情面板从顶部往下长、
-     日志面板从底部往上长，**中间必然重叠**，而启停/报修按钮正好在详情面板最底部。
-     同层时后挂的日志面板会盖住按钮 —— 实测点不动（elementFromPoint 命中 .log-time），
-     而且只在特定视口高度出现，属于"偶发点不动"的隐形 bug。 */
+  /* ★ z-index 保证压在 3D canvas / 标签之上。原本是为了压过 op-log-panel，
+     现在两者已不重叠，仍保留高档位以防后续新增浮层。 */
   z-index: 30;
   /* ★ 内容再长也不能越过视口：否则底部那排操作按钮滚不到，等于按钮凭空消失 */
   max-height: calc(100% - 32px);
@@ -4027,6 +4677,35 @@ const typeNames = {
   font-size: 12px; color: #777; line-height: 1.5;
   margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid #eee;
 }
+
+/* ── 详情面板主行动按钮（进入所属工艺段功能页）──
+   刻意不用 el-button：这里需要整行通栏 + 段主题色描边 + 右端箭头，
+   Element 的默认实心蓝会把同面板里的 5 个次级操作全压成背景。
+   用 --cta 承接当前段配色（磨矿蓝 / 浮选绿 / 输送橙 / 尾矿紫）。 */
+.detail-cta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 8px 11px;
+  border: none;
+  border-radius: 6px;
+  background: var(--cta, #165dff);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--cta, #165dff) 30%, transparent);
+  transition: filter 0.16s, transform 0.16s;
+}
+.detail-cta:hover { filter: brightness(1.08); }
+.detail-cta:active { transform: translateY(1px); }
+.cta-text { flex: 1; min-width: 0; }
+.cta-arrow { font-size: 16px; line-height: 1; opacity: 0.85; }
+
 .metrics-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4172,8 +4851,15 @@ const typeNames = {
   box-shadow: var(--shadow-md);
   overflow: hidden;
   z-index: 10;
+  /* ★ 高度必须受视口约束：768 高度下 8 条日志 = 215px，
+     会从小尺寸的 3D 视图里挖掉近 1/3 的面积（那才是页面主体）。
+     这里按剩余空间自适应，矮屏自然只显示 6 条。 */
+  display: flex;
+  flex-direction: column;
+  max-height: min(40vh, 196px);
 }
 .log-header {
+  flex-shrink: 0;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
@@ -4181,15 +4867,28 @@ const typeNames = {
   background: #f7f8fa;
   border-bottom: 1px solid #eee;
 }
-.log-list { max-height: 180px; overflow-y: auto; }
+.log-list {
+  flex: 1;
+  min-height: 0;          /* ★ flex 子项归零，否则 max-height 拦不住内容 */
+  overflow-y: auto;
+}
 .log-item {
   display: flex; gap: 8px;
-  padding: 6px 12px;
+  padding: 5px 12px;
   font-size: 11px;
   border-bottom: 1px solid #f2f3f5;
 }
 .log-time { color: #999; white-space: nowrap; font-family: monospace; }
-.log-action { color: #4f5b66; }
+.log-action {
+  color: #4f5b66;
+  /* 长动作名（"工单 WO-… 开始维修（待处理 → 维修中）"）最多两行，
+     否则一条就撑出 60px，把面板顶到三行就满 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
 .log-success .log-action { color: #00b42a; font-weight: 500; }
 .log-warning .log-action { color: #ff7d00; font-weight: 500; }
 .log-danger .log-action { color: #f53f3f; font-weight: 500; }
