@@ -1,0 +1,171 @@
+/* ============================================
+   SuiEye 设计令牌 (Design Tokens)
+   简约浅色扁平 · 去 AI 感
+
+   设计原则：
+     1. 单一品牌色 —— 所有强调用 --color-primary，不彩虹
+     2. 状态色只在状态时用 —— success/warning/danger 不当装饰色
+     3. 中性灰阶为主 —— 文字 4 档 / 背景 3 档 / 边框 2 档
+     4. 图表 3 色 —— 主色 + 1 对比色 + 中性灰，多系列用深浅
+     5. 统一圆角 —— 全站 --radius-md (6px)，不混用
+     6. 轻阴影 —— 只 --shadow-sm，重阴影禁用
+     7. 克制 hover —— 只改背景，不 translateY + scale + shadow
+
+   使用方式：
+     var(--color-primary)    主色
+     var(--text-1)           主文字
+     var(--bg-1)             卡片白
+     var(--border-1)         分隔线
+     var(--radius)           圆角
+     var(--chart-1)          图表主色
+   ============================================ */
+
+:root {
+  /* ---- 品牌色（单一主色，不彩虹） ---- */
+  --color-primary: #165dff;
+  --color-primary-hover: #0e4ed6;
+  --color-primary-active: #0b3fb0;
+  --color-primary-bg: #e8f3ff;      /* 主色淡背景，仅 active/hover 占位用 */
+
+  /* ---- 状态色（只在成功/警告/危险状态用，不当装饰） ---- */
+  --color-success: #00b42a;
+  --color-warning: #ff7d00;
+  --color-danger: #f53f3f;
+
+  /* ---- 中性灰阶（全站主基调，不饱和） ---- */
+  --text-1: #1d2129;        /* 主文字 */
+  --text-2: #4e5969;        /* 次级文字 */
+  --text-3: #86909c;        /* 辅助文字 */
+  --text-4: #c9cdd4;        /* 禁用/占位 */
+
+  --bg-1: #ffffff;          /* 卡片白 */
+  --bg-2: #f7f8fa;          /* 页面灰底 */
+  --bg-3: #f2f3f5;          /* 容器深灰底 */
+  --bg-hover: #f2f3f5;      /* hover 中性灰，不用主色淡版 */
+  --bg-active: #e8f3ff;     /* active 才用主色淡版 */
+
+  --border-1: #e5e6eb;      /* 分隔线 */
+  --border-2: #f2f3f5;       /* 弱分隔 */
+
+  /* ---- 间距（8 倍数体系） ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* ---- 圆角（统一一个值，不混用） ---- */
+  --radius-sm: 4px;         /* 仅小标签 */
+  --radius: 6px;            /* 默认 */
+  --radius-lg: 8px;          /* 大卡片 */
+
+  /* ---- 阴影（只轻，重阴影禁用） ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.06);  /* 慎用 */
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12); /* 禁用，仅弹窗 */
+
+  /* ---- 字体 ---- */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", Consolas, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.7;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* ---- 过渡（克制，不用 ease-in-out 弹跳） ---- */
+  --transition: 0.15s ease;
+
+  /* ---- 图表配色（3 色，不是 7 色；多系列用深浅） ---- */
+  --chart-1: #165dff;       /* 主色 */
+  --chart-2: #86909c;       /* 中性对比色 */
+  --chart-3: #00b42a;       /* 仅第三系列用绿 */
+  --chart-1-light: #94b8ff;
+  --chart-1-bg: #e8f3ff;
+  --chart-danger: #f53f3f;
+  --chart-warning: #ff7d00;
+}
+
+/* ---- 语义化快捷类 ---- */
+.text-1 { color: var(--text-1); }
+.text-2 { color: var(--text-2); }
+.text-3 { color: var(--text-3); }
+.text-4 { color: var(--text-4); }
+.text-primary { color: var(--color-primary); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-danger { color: var(--color-danger); }
+
+.bg-1 { background: var(--bg-1); }
+.bg-2 { background: var(--bg-2); }
+.bg-3 { background: var(--bg-3); }
+
+/* ============================================
+   兼容层 —— 旧变量名映射到新值
+   保证现有页面（Equipment3D/SafetyCenter 等）
+   在未迁移时不挂，后续逐步换用新令牌
+   ============================================ */
+:root {
+  --text-primary: var(--text-1);
+  --text-secondary: var(--text-2);
+  --text-muted: var(--text-3);
+  --text-disabled: var(--text-4);
+
+  --bg-page: var(--bg-2);
+  --bg-card: var(--bg-1);
+  --bg-container: var(--bg-3);
+
+  --border-color: var(--border-1);
+  --border-color-light: var(--border-2);
+
+  --color-primary-light: var(--color-primary-bg);
+  --color-success-light: #e8ffea;
+  --color-warning-light: #fff7e6;
+  --color-danger-light: #ffece8;
+  --color-info: var(--text-3);
+  --color-info-light: var(--bg-3);
+
+  --spacing-xs: var(--space-1);
+  --spacing-sm: var(--space-2);
+  --spacing-md: var(--space-4);
+  --spacing-lg: var(--space-6);
+  --spacing-xl: var(--space-8);
+
+  --radius-md: var(--radius);
+  --radius-xl: var(--radius-lg);
+
+  --font-size-xs: var(--text-xs);
+  --font-size-sm: var(--text-sm);
+  --font-size-md: var(--text-base);
+  --font-size-lg: var(--text-lg);
+  --font-size-xl: var(--text-xl);
+  --font-size-xxl: var(--text-2xl);
+
+  --transition-fast: var(--transition);
+  --transition-normal: var(--transition);
+  --transition-slow: 0.25s ease;
+
+  /* 图表兼容（旧 7 色 → 收敛到 3 色，降饱和） */
+  --chart-blue: var(--chart-1);
+  --chart-green: var(--chart-3);
+  --chart-orange: var(--chart-warning);
+  --chart-red: var(--chart-danger);
+  --chart-purple: #73798e;   /* 旧紫色 → 中性灰紫，不抢戏 */
+  --chart-cyan: #6a99d6;      /* 旧青 → 主色深浅 */
+  --chart-pink: #b0708a;      /* 旧粉 → 降饱和 */
+}

@@ -1,0 +1,69 @@
+name: flotation
+display_name: "浮选品位预测"
+version: "1.0"
+
+input:
+  type: image
+  sources:
+    - type: upload
+    - type: rtsp_stream
+      url: "${CAMERA_FLOTATION_RTSP}"
+    - type: scheduled_capture
+      interval_sec: 300
+
+pipeline:
+  filters:
+    - name: roi_extract
+      params:
+        center_ratio: 0.6
+    - name: enhance
+      params:
+        method: msr_bilateral
+    - name: segment
+      params:
+        method: watershed
+    # CRF 边界精修（Step 3.3-E）：已回退停用。实测在当前合成数据基线上
+    # 分割效果变差，待真实数据微调 U-Net 后再评估是否启用。
+    # - name: refine_crf
+    #   params:
+    #     source: mask
+    #     iterations: 5
+    #     bilat_compat: 5
+    #     gt_prob: 0.8
+    - name: extract_features
+      params:
+        feature_set: standard_11d
+    - name: predict
+      params:
+        model_key: xgb-v1
+
+prediction_targets:
+  - name: pb_grade_xrf
+    unit: "%"
+    range: [1.5, 12.0]
+  - name: zn_grade_xrf
+    unit: "%"
+    range: [1.0, 9.0]
+
+assay_mapping:
+  ledger_type: xrf
+  fields:
+    pb_grade: pb
+    zn_grade: zn
+  time_window_min: 30
+
+alarm_rules:
+  - name: pb_too_low
+    field: predicted.pb_grade_xrf
+    condition: "<"
+    threshold: 4.0
+    level: warning
+    message: "铅品位偏低（<4%），建议检查浮选药剂添加量"
+    cooldown_sec: 600
+  - name: pb_critical
+    field: predicted.pb_grade_xrf
+    condition: "<"
+    threshold: 2.5
+    level: danger
+    message: "铅品位严重偏低（<2.5%）！立即排查工艺参数"
+    cooldown_sec: 1800

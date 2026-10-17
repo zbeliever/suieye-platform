@@ -1,0 +1,32 @@
+# ── Web 框架 ──────────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+pyyaml>=6.0.0
+python-multipart>=0.0.9
+
+# ── 数值 / 科学计算 ────────────────────────────────────────
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+
+# ── 图像处理 ──────────────────────────────────────────────
+# ⚠️ 必须用 headless 版，不要装 opencv-python（会与已加载的 cv2.pyd 冲突，见 HANDOFF.md 坑 3）
+opencv-python-headless>=4.8.0
+scikit-image>=0.21.0
+Pillow>=10.0.0
+
+# ── 机器学习 ──────────────────────────────────────────────
+scikit-learn>=1.4.0
+xgboost>=2.0.0
+openpyxl>=3.1.0
+
+# ── 深度学习（CPU 版，需特殊源，单独安装）──────────────────
+# torch / torchvision：
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# 目标检测（安全巡检，可选，避免 opencv 冲突用 --no-deps）：
+#   pip install ultralytics --no-deps
+#   pip install requests httpx psutil ultralytics-thop

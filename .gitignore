@@ -1,0 +1,65 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# ===== Node / 前端构建产物 =====
+node_modules/
+dist/
+.vite/
+*.local
+npm-debug.log*
+yarn-error.log*
+
+# ===== 运行时数据库（可由此 init_db() 重建，不入库）=====
+suieye.db
+suieye.db-journal
+suieye.db-wal
+suieye.db-shm
+*.db.bak_*
+
+# ===== 运行时上传与输出（体积大 / 可再生）=====
+uploads/
+data/uploads/
+data/outputs/
+outputs/
+
+# ===== 数据集与源素材（体积达 GB 级，本地保留）=====
+data/_datasets/
+dataset/
+data/safety_assets/sh17_workers/
+
+# ===== 模型权重（可重新下载 / 重新训练）=====
+*.pt
+*.pth
+*.onnx
+*.part
+yolov8n.pt
+yolov8n-seg.pt
+
+# ===== 演示用长录像（仅在完整演示环境需要，不入库）=====
+# 注意：froth-loop.mp4 / froth-poster.jpg 为直播墙与监控页必需素材，已保留入库
+frontend/public/media/froth2019/
+
+# ===== 临时与日志 =====
+*.log
+_fe.log
+_be.log
+outputs/_fe.log
+outputs/_be.log
+tmp/
+temp/
+*.tmp
+
+# ===== 编辑器与系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

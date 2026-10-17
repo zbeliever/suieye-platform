@@ -1,0 +1,164 @@
+# ============================================================
+# 淬眸 SuiEye — 安全巡检场景配置
+# 场景名称: safety (皮带/区域安全巡检)
+# ============================================================
+
+meta:
+  name: safety
+  display_name: "安全巡检"
+  version: "1.0.0"
+  description: >
+    选矿厂皮带输送机与危险区域安全巡检。
+    检测目标：皮带跑偏、人员入侵、异物、PPE缺失（安全帽/反光衣）。
+    输出：检测框可视化、风险评级、告警记录。
+
+# --- 输入图像规格 ---
+input:
+  source: camera  # camera / file / rtsp
+  expected_format: bgr
+  # 安全巡检通常用全帧，不做中心裁剪
+  roi:
+    method: full_frame  # 使用整幅图像
+
+# --- 处理管线（Filter 链） ---
+pipeline:
+  filters:
+    # Step 1: ROI提取 — 全帧
+    - name: roi_extract
+      params:
+        method: full_frame
+
+    # Step 2: 图像增强 — CLAHE + 锐化（提升暗部细节）
+    - name: enhance
+      params:
+        method: clahe_sharpen
+        clip_limit: 2.5
+        kernel_size: [3, 3]
+        sharpen_strength: 0.3
+
+    # Step 3: YOLO目标检测
+    - name: detect_objects
+      params:
+        model_name: yolov8n.pt          # nano版，CPU友好
+        conf_threshold: 0.25            # 置信度阈值
+        iou_threshold: 0.45             # NMS IoU阈值
+        # 自定义检测类别映射（COCO预训练 + 扩展）
+        target_classes:
+          # COCO已有类别
+          - person        # 人员
+          - helmet        # 安全帽（需自定义训练）
+          - tie           # 领带（近似反光衣检测）
+          # 扩展类别（规则检测）
+          - belt_misalignment   # 皮带跑偏（边缘检测规则）
+          - foreign_object      # 异物（异常检测）
+          - intrusion           # 危险区域入侵（区域规则）
+        # 危险区域定义（归一化坐标 [x1, y1, x2, y2]）
+        danger_zones:
+          - name: "皮带机头"
+            rect: [0.0, 0.0, 0.3, 0.5]
+            risk_level: "high"
+          - name: "皮带机尾"
+            rect: [0.7, 0.0, 1.0, 0.5]
+            risk_level: "high"
+          - name: "皮带中段"
+            rect: [0.2, 0.0, 0.8, 1.0]
+            risk_level: "medium"
+
+    # Step 4: 安全特征提取
+    - name: extract_safety_features
+      params:
+        # 危险区域定义（与 detect_objects 保持一致；归一化坐标 [x1, y1, x2, y2]）
+        danger_zones:
+          - name: "皮带机头"
+            rect: [0.0, 0.0, 0.3, 0.5]
+            risk_level: "high"
+          - name: "皮带机尾"
+            rect: [0.7, 0.0, 1.0, 0.5]
+            risk_level: "high"
+          - name: "皮带中段"
+            rect: [0.2, 0.0, 0.8, 1.0]
+            risk_level: "medium"
+        # 皮带边缘检测参数
+        edge_detection:
+          canny_low: 50
+          canny_high: 150
+          hough_rho: 1
+          hough_theta: np.pi / 180
+          hough_threshold: 100
+          min_line_length: 100
+          max_line_gap: 20
+        # 偏移报警阈值（像素）
+        misalignment_threshold: 30
+
+    # Step 5: 风险评级
+    - name: assess_risk
+      params:
+        # 风险等级权重
+        weights:
+          person_in_danger_zone: 4.0     # 人员在危险区 = 最高风险
+          belt_misalignment: 3.0         # 皮带跑偏 = 高风险
+          foreign_object: 2.5            # 异物 = 中高风险
+          ppe_missing: 2.0               # PPE缺失 = 中等风险
+          person_safe_zone: 1.0          # 安全区人员 = 低风险
+        # 风险等级阈值
+        thresholds:
+          low: 2.0
+          medium: 5.0
+          high: 10.0
+          critical: 20.0
+
+# --- 告警规则（alarm.py 通用格式：field + condition + threshold）---
+alarm_rules:
+  - name: "人员闯入危险区"
+    field: "features.persons_in_danger_zone"
+    condition: ">"
+    threshold: 0
+    level: danger
+    message: "检测到人员进入危险区域，立即撤离！"
+
+  - name: "皮带严重跑偏"
+    field: "features.belt_offset_px"
+    condition: ">"
+    threshold: 50
+    level: danger
+    message: "皮带跑偏超过50px，请立即停机检查托辊！"
+
+  - name: "皮带轻微跑偏"
+    field: "features.belt_offset_px"
+    condition: ">"
+    threshold: 30
+    level: warning
+    message: "皮带存在轻微跑偏，建议关注托辊状态。"
+
+  - name: "皮带异物"
+    field: "features.foreign_object_count"
+    condition: ">"
+    threshold: 0
+    level: warning
+    message: "检测到皮带上有异物，请确认处理。"
+
+  - name: "PPE佩戴不合规"
+    field: "features.ppe_compliance_rate"
+    condition: "<"
+    threshold: 0.81
+    level: warning
+    message: "现场人员PPE佩戴率不足80%，请督促整改。"
+
+# --- 输出配置 ---
+output:
+  visualizations:
+    - name: detection_overlay       # 检测框叠加图
+      format: bgr
+    - name: danger_zone_map         # 危险区域热力图
+      format: bgr
+    - name: belt_edge_analysis      # 皮带边缘分析图
+      format: gray
+  metrics:
+    - risk_score                    # 风险评分 (0-100)
+    - risk_level                    # 风险等级 (low/medium/high/critical)
+    - person_count                  # 检测到的人员数
+    - belt_offset                   # 皮带偏移量 (px)
+    - foreign_object_count          # 异物数量
+    - ppe_compliance_rate           # PPE合规率
+    - detection_count               # 总检测目标数
+    - inference_time_ms             # 推理耗时

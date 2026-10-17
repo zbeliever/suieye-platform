@@ -1,0 +1,79 @@
+name: grinding
+display_name: "矿石粒度分析"
+version: "1.0"
+description: "磨矿段矿石颗粒分割与P80粒度预测。输入矿石/矿浆图像，输出颗粒分布曲线、P80值、工况判断（过磨/欠磨/正常）。"
+
+input:
+  type: image
+  sources:
+    - type: upload
+    - type: rtsp_stream
+      url: "${CAMERA_GRINDING_RTSP}"
+    - type: scheduled_capture
+      interval_sec: 600
+
+pipeline:
+  filters:
+    - name: roi_extract
+      params:
+        center_ratio: 0.8
+    - name: enhance
+      params:
+        method: clahe_sharpen
+    - name: segment_grains
+      params:
+        method: adaptive_morphology
+        min_area: 50
+        max_area: 50000
+        circularity_threshold: 0.15
+    - name: extract_grain_features
+      params:
+        feature_set: grinding_full
+    - name: predict_p80
+      params:
+        model_key: p80-v1
+
+prediction_targets:
+  - name: p80
+    unit: "μm"
+    range: [20, 500]
+  - name: condition
+    unit: ""
+    range: [0, 2]
+    labels: ["过磨", "正常", "欠磨"]
+
+assay_mapping:
+  ledger_type: sieve_analysis
+  fields:
+    p80: p80_actual
+    time_window_min: 60
+
+alarm_rules:
+  - name: p80_too_fine
+    field: predicted.p80
+    condition: "<"
+    threshold: 75
+    level: warning
+    message: "产品粒度过细，存在过磨风险"
+    cooldown_sec: 900
+  - name: p80_too_coarse
+    field: predicted.p80
+    condition: ">"
+    threshold: 200
+    level: warning
+    message: "产品粒度过粗，存在欠磨风险"
+    cooldown_sec: 900
+  - name: p80_critical_fine
+    field: predicted.p80
+    condition: "<"
+    threshold: 45
+    level: danger
+    message: "严重过磨！能耗浪费，可能影响浮选指标"
+    cooldown_sec: 1800
+  - name: overgrinding_ratio_high
+    field: metrics.overgrinding_ratio
+    condition: ">"
+    threshold: 0.35
+    level: warning
+    message: "过磨颗粒占比偏高（>35%），建议检查球磨机装球量"
+    cooldown_sec: 1200
