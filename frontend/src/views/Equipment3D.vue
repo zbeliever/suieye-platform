@@ -395,8 +395,11 @@ function placeAllEquipments() {
     // ── 标签（孪生读数牌：序号 + 名称 + 健康度）──
     // ★ 挂高只按"设备本体"算：光柱高 6.2m、基座宽 1m+，把它们算进包围盒会让异常设备的牌子
     //   飘到光柱顶端（7m），和本体彻底脱钩 —— 这正是"标签对应不明确"的主因。
+    // ★ 而且"本体顶"要取**主体块**（槽体/筒体/池壁）的顶面，不是 group 最高点：
+    //   浮选槽顶部走道 + 立式电机把 group 顶到 3.85m，牌子就被抬到空中，
+    //   既离开了本体，也压到了旁边的工艺管道上。
     const topY = bodyTopY(model)
-    const labelY = Math.max(topY + 0.8, 1.7)
+    const labelY = Math.max(topY + 0.55, 1.6)
     const label = createLabel(equip.name, equip.status, equip.health, idx + 1, equip.location_tag, equip.id)
     label.position.set(0, labelY, 0)
     model.add(label)
@@ -947,17 +950,32 @@ function equipPos(id, equip) {
 
 /** 功能载体建筑的位置与朝向
  *
- *  摆位原则（按相机在东南方向 (16.5, 11, 20.5) 俯视来组织）：
+ *  摆位原则（按相机在东南方向 (21, 14, 26.5) 俯视来组织）：
  *   · 中控楼（中控室 + 化验室）放**北侧远景**：作为厂房背景，同时不遮挡设备
  *   · 药剂间放**西侧**，紧邻浮选段（agitator 在 x=-9.5），加药管往东接进浮选
- *   · 配电室放**东侧**，靠近用电大户球磨机（x=10.5）
+ *   · 配电室放**东侧偏北**，靠近用电大户球磨机（x=10.5），但要让开桁架视线
  *   · 监控立杆放**南侧前沿**两处，模拟厂区周界监控
  *  这些位置都留出了设备本体（x -9.5~10.5 / z -5.5~10）的活动空间，不会互相穿插。 */
 const FACILITY_LAYOUT = {
   control_room: { pos: [-3.0, 0, -16.5], rotY: 0 },
   lab:          { pos: [-13.5, 0, -14.5], rotY: 0 },
   dosing_room:  { pos: [-18.5, 0, 1.5],  rotY: Math.PI / 2 },
-  power_room:   { pos: [ 18.0, 0, -1.0], rotY: -Math.PI / 2 },
+  // ★★ 2026-10-18 配电室从 (18,0,-1) 移到 (12.9,0,-12.1)：
+  //    原位置卡在厂房骨架东侧立柱与球磨机（10.5,-5.5）之间，
+  //    默认视角里整栋楼被桁架和球磨机挡死，只剩屋顶一条缝 ——
+  //    左栏「配电室 → 系统设置」在 3D 里等于不可见（QA 实测点击命中球磨机）。
+  //    往北收、同时贴着厂房东北角内侧：既在骨架外，也留在画面内。
+  // ★★ 2026-10-19 再往西北收 (15.5,-13.5) → (12.9,-12.1)：
+  //    上一版仍出框 —— 实测楼体右缘投影 x1=1485 / 1658 / 2002，
+  //    而 3D 视口右界只有 1420 / 1580 / 1900（三种尺寸**全部**溢出），
+  //    屏幕上只剩孤零零一个蓝色徽标贴着右边缘，楼体整个在画外。
+  //    往 −X/−Z 各收 2.6/1.4 后楼体右缘回到视口内，且不与球磨机遮挡。
+  // ★★ 2026-10-19 第二轮：上面那步还不够 —— 楼体虽入框，但**西半边被厂房钢柱
+  //    + 桁架压住**，屏幕上只剩一块灰顶。配电室本身是 4×4 的小平房（rotY=-90° 后
+  //    占 X 14±2 / Z -12.1±2），再往西必然撞上球磨机（10.5,-5.5），往南又回到原问题。
+  //    最终解不是继续挪，而是**把相机拉远一档**（见 fitHomeDistance 的 FIT_MIN_SCALE），
+  //    让东北角那片空地在画面里留出余量。位置保持 (12.9,-12.1)。
+  power_room:   { pos: [ 12.9, 0, -12.1], rotY: -Math.PI / 2 },
   cctv:         { pos: [ 14.5, 0, 15.5], rotY: 0 },
 }
 /** 第二根监控立杆（对角布置才像周界覆盖） */
@@ -2083,6 +2101,16 @@ function createLabel(name, status, health, idx, tag, equipId) {
 /** 标签配色（按状态），集中一处便于 3D 与列表口径一致 */
 function labelCss(status) {
   return `
+    /* ★★ position:absolute 不可省 —— 这是"标签横向错位、引线接不上"的根因。
+       CSS2DRenderer 靠给元素写 transform 来定位，但**要求元素本身是绝对定位**；
+       这里 cssText 没写 position 时它是 inline-flex 行内元素，会被父容器的文档流
+       （前面还有别的标签、还有 HUD 节点）往里挤，于是 translate(-50%,-100%)
+       作用在一个**已经被挤偏的盒**上：标签整体右移半个多宽，引线仍画在原 _sx 处，
+       视觉上就是"牌子飘到右边、线指在牌子左边"，实测偏 57px（恰为半个标签宽）。
+       同时去掉 top/left——位置由每帧的 transform 决定，写死会让标签贴住容器左上角。 */
+    position: absolute;
+    top: 0;
+    left: 0;
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -2217,6 +2245,10 @@ function createAmbientDust() {
   })
   const pts = new THREE.Points(geo, mat)
   pts.name = 'ambientDust'
+  // ★ 微尘是纯氛围，必须退出拾取与命中链：它是 300 个随机分布的点，
+  //   总有一些正好挡在设备与相机之间 —— 实测锚点射线最先撞上的就是它（dist 19.4），
+  //   于是"点设备的牌子"偶尔会变成"什么都没点中"，属于随机复现的幽灵 bug。
+  pts.raycast = () => {}
   return pts
 }
 
@@ -2235,9 +2267,15 @@ function initScene() {
   scene.fog = new THREE.Fog(FOG_COLOR, 36, 110)
 
   // 相机（抬高拉远 + 略收窄视角，把两排厂区一次框住，透视更"正经"）
-  camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000)
-  camera.position.set(16.5, 11, 20.5)
-  camera.lookAt(-0.5, 1.7, 0)
+  // ★★ 2026-10-18 相机后撤：原 (16.5,11,20.5)/45° 时配电室（x=18 东侧）
+  //    投影到屏幕 x=2203，**整个落在 1920 视口之外** —— 用户看不见也点不到，
+  //    左栏「配电室 → 系统设置」这条入口在 3D 里等于不存在。
+  //    实测 (21,14,26.5)/48° 是"15 个关键点（10 设备锚点 + 5 载体楼顶）全部入框"
+  //    最保守的一组：只把它往外拉了约 30%，没动视野角，构图比例不变。
+  camera = new THREE.PerspectiveCamera(48, w / h, 0.1, 1000)
+  camera.position.copy(HOME_POS())
+  camera.lookAt(HOME_AIM)
+  fitHomeDistance()
 
   // WebGL 渲染器
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
@@ -2296,6 +2334,8 @@ function initScene() {
   controls.minDistance = 8
   controls.maxDistance = 65
   controls.target.copy(SCENE_CENTER)
+  // controls 就绪后按当前宽高比再校一次机位（相机先于 controls 创建，那时算不了 target）
+  fitHomeDistance()
 
   // ── 光照系统：半球光/环境光压低 → 靠主光塑造明暗面，金属才有"体积"；
   //    主光偏暖打侧上，冷暖对冲（补光偏蓝）让灰调设备不再糊成一团 ──
@@ -2442,6 +2482,26 @@ function initScene() {
       renderer, scene, camera, composer, bloomPass, pickTargets, hoveredId, hoverPos, labelItems,
       controls,            // 相机轨道控制器：QA 用它读"当前绕谁转"（controls.target）
       facilityMeshes,      // 功能载体建筑 group（QA 用它数建筑、读位置）
+      // 按屏幕坐标做一次真实拾取 —— QA 用它验证"引线锚点到底落在哪台设备上"
+      pickAt: (x, y) => pickEquipmentAt(x, y),
+      // "这一点上有没有这台设备"（不管建筑是否在前面）—— QA 验标签锚点用，语义见 equipmentUnderPoint
+      equipUnder: (x, y) => equipmentUnderPoint(x, y),
+      // 按屏幕坐标列出射线**命中链**（远近顺序）—— 排查"锚点打在别的设备上"用
+      rayHits: (x, y) => {
+        if (!canvasContainer.value || !camera) return []
+        const rect = canvasContainer.value.getBoundingClientRect()
+        mouse.x = ((x - rect.left) / rect.width) * 2 - 1
+        mouse.y = -((y - rect.top) / rect.height) * 2 + 1
+        raycaster.setFromCamera(mouse, camera)
+        return raycaster.intersectObjects(scene.children, true)
+          .filter(h => h.object.visible !== false)
+          .slice(0, 5)
+          .map(h => ({
+            name: h.object.name || h.object.type,
+            equipId: h.object.userData.equipId || h.object.parent?.userData?.equipId || null,
+            dist: +h.distance.toFixed(2),
+          }))
+      },
       // 量化"每次 hover 检测"的射线开销：旧实现 = 全场景递归（含 300 点微尘），新实现 = 7 个盒子
       benchRaycast: (n = 200) => {
         const rc = new THREE.Raycaster()
@@ -2897,11 +2957,75 @@ function bodyBox(group) {
   return box
 }
 
-/** 本体顶部高度（group 局部坐标） */
+/** 本体顶部高度（group 局部坐标） —— 取主容器子件的顶面，理由见 bodyAnchor */
 function bodyTopY(group) {
-  const b = bodyBox(group)
-  if (b.isEmpty()) return 2.0
-  return Math.max(b.max.y - group.position.y, 0.6)
+  const a = bodyAnchor(group)
+  return Math.max(a.y - group.position.y, 0.6)
+}
+
+/**
+ * 读数牌锚点 —— 落在**设备本体正中心的上方一点**，不是 group 包围盒的最高点。
+ *
+ * ★★ 这是"标签指错设备"的真正根因，比拾取盒重叠隐蔽得多：
+ *    每台设备都带一堆附属件 —— 顶部走道（浮选槽 walkY=2.45、还外伸到 z=2.53）、
+ *    立式电机（球磨机顶到 3.85）、拉绳开关（皮带机外挂 z=0.54）、
+ *    **合批后的细节簇**（detail-galv 一个簇就横跨整机，包围盒中心根本不代表本体）。
+ *    用 group 或簇的包围盒取"顶面中心"，锚点就会漂到走道/电机上方，
+ *    在画面上往往正好压在旁边的工艺管道上 —— 于是线看起来是从管道长出来的。
+ *
+ * 做法：横向**一律退回设备布局原点**（那是建模者放这台机器的位置，绝对居中），
+ *      只让纵向取"主要容器子件"的顶面高度。横向不猜，就不会漂。
+ */
+function bodyAnchor(group) {
+  group.updateWorldMatrix(true, true)
+
+  // ★★ 开口池体（回水池 / 尾矿溢流池 / 加药装置）单独处理：
+  //    它们的"主体"是一个圆筒**壳**，包围盒顶面正好在池沿，而横向中心是**池腔正中**。
+  //    于是锚点落在池子内部 —— 引线从池面正中往下"扎"进水里，看起来像插在水里，
+  //    实测回水池的锚点射线一路穿过池壁打到池底（QA 报"引线穿越他机"）。
+  //    判据：主容器是"筒体"且顶面中心**是空的**（射线打不到它的顶盖）→ 抬到池沿之上。
+  let topY = null
+  let mainCh = null
+  let mainVol = 0
+  group.children.forEach((ch) => {
+    if (ch.isCSS2DObject || NON_BODY_NAMES.has(ch.name)) return
+    if (!ch.isMesh || !ch.geometry) return
+    const b = new THREE.Box3().setFromObject(ch)
+    if (b.isEmpty()) return
+    const s = b.getSize(new THREE.Vector3())
+    const vol = s.x * s.y * s.z
+    // 只接受"够肥"的子件：单块体积超过 1.2m³，排除细杆/法兰/绳索
+    if (vol < 1.2) return
+    if (topY == null || b.max.y > topY) topY = b.max.y
+    if (vol > mainVol) { mainVol = vol; mainCh = ch }
+  })
+  if (topY == null) {
+    const b = bodyBox(group)
+    topY = b.isEmpty() ? group.position.y + 2 : b.max.y
+  }
+
+  // 池体检测：主容器是高位圆筒（Cylinder）且半径与高度同量级 → 判断顶面有没有盖
+  if (mainCh && mainCh.geometry && /Cylinder/i.test(mainCh.geometry.type)) {
+    const geo = mainCh.geometry
+    const p = geo.parameters || {}
+    const rTop = p.radiusTop ?? 0
+    const hCyl = p.height ?? 0
+    const isPool = Math.abs(rTop - (p.radiusBottom ?? 0)) < 0.05 && rTop > hCyl * 0.45
+    if (isPool) {
+      // 顶面中心有没有实体（有盖 → 射线会立刻命中；没盖 → 穿透到池底或更远）
+      const ray = new THREE.Raycaster()
+      const from = new THREE.Vector3(group.position.x, topY + 2.5, group.position.z)
+      ray.set(from, new THREE.Vector3(0, -1, 0))
+      const lid = ray.intersectObject(mainCh, false)
+        .some((hh) => hh.point.y > topY - 0.35)
+      // 池沿 + 护栏：池沿约等于 topY，护栏通常再高 1.0~1.2m。
+      // 抬到 topY + 1.15 让锚点落在护栏顶上 —— 视觉上"从池口的栏杆长出来"。
+      if (!lid) topY += 1.15
+    }
+  }
+
+  // 横向用 group 原点的 x/z（= 布局表坐标 = 设备几何中心）
+  return new THREE.Vector3(group.position.x, topY + 0.06, group.position.z)
 }
 
 /**
@@ -2915,7 +3039,8 @@ function registerLabel(equip, group, label, topY) {
   line.setAttribute('class', 'leader-line')
   const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
   dot.setAttribute('class', 'leader-dot')
-  dot.setAttribute('r', '2.6')
+  // 2.6 半径在 1920 下只有 5px，混在设备零件里像一个亮点。放大到 3.6 才读得出"这是定位点"
+  dot.setAttribute('r', '3.6')
   // ★ 标记归属设备：这个圆点画在**设备锚点**的屏幕坐标上，
   //   是"设备本体在画面上的确切位置"。标签本身会因为避让偏离本体，
   //   拿标签中心去点会打到它背后的设备（QA 实测：双击渣浆泵跳进了球磨机的页面）。
@@ -2925,11 +3050,15 @@ function registerLabel(equip, group, label, topY) {
     leaderSvg.appendChild(line)
     leaderSvg.appendChild(dot)
   }
-  // 锚点 = 设备本体顶部中心（世界坐标，group 已在场景里且位置已设）
-  const anchor = new THREE.Vector3(0, Math.min(topY, 4.6), 0).add(group.position)
+  // 锚点 = 设备**主体块**顶面中心（世界坐标），由 bodyAnchor 计算。
+  // 不能用整个 group 的最高点：顶部走道/立式电机/外挂开关会把锚点顶到管道上方。
+  const anchor = bodyAnchor(group)
   labelItems.push({ id: equip.id, el: label.element, anchor, line, dot, w: 92, h: 22 })
   return [line, dot]
 }
+
+/** 标签底边抬离锚点的像素高度 —— 太低压根看不出引线方向，太高会把牌子推到别的设备头顶 */
+const LABEL_LIFT = 26
 
 /**
  * 标签布局：屏幕空间避让。
@@ -2979,22 +3108,58 @@ function relayoutLabels() {
     if (it.dot.style.opacity) it.dot.style.opacity = ''
     const w = it.w || 92
     const h = it.h || 22
-    let ly = it._sy - 9                       // 标签底边的屏幕 y
+    // ★ 抬牌高度：9px 太贴近锚点，引线短到看不出方向，人眼只能靠"大概在正上方"猜。
+    //   抬到 26px 后引线有一段可见长度，"这条线从哪台机器的顶盖长出来"一眼可读。
+    //   同时保持尽量低 —— 抬太高会把牌子推到别的设备头顶，那才是真的错位。
+    // ★★ 2026-10-18：原来**只做纵向让位**（牌子固定在同一列的竖线上）
+    //   —— 结果"搅拌槽(07)"的牌子正正压在"浓密机(06)"这台机器头上，
+    //   引线却是搅拌槽自己的（从它顶部的驱动头往下 26px）。老板看到的
+    //   "标签和设备不对应"就是这里：牌子的位置说明它属于浓密机，线说它属于搅拌槽。
+    //   现在改为**先竖后横**两级避让：
+    //     ① 纵向：与已放置的牌子重叠 → 往上让
+    //     ② 横向：若让到位后牌子矩形罩住了**别的设备锚点**，左右平移
+    //        （优先往画面外侧/远离中线一侧，避免又被自己让回去）
+    //   横向平移后引线仍是斜的（从锚点直达牌子底边），指向关系反而更明确。
+    let ly = it._sy - LABEL_LIFT              // 标签底边的屏幕 y
     for (let guard = 0; guard < 24; guard++) {
       const l = it._sx - w / 2, r = it._sx + w / 2, t = ly - h, b = ly
       const hit = placed.find(q => !(r < q.l || l > q.r || b < q.t || t > q.b))
       if (!hit) break
       ly = hit.t - 5                         // 与已放置的牌子重叠 → 往上让位
     }
-    placed.push({ l: it._sx - w / 2, r: it._sx + w / 2, t: ly - h, b: ly })
+    // ② 横向：牌子不能"坐"在别的设备头上
+    //    ⚠️ 只允许"往上再往两侧"避让，**绝不能往下**：
+    //      牌子一旦落到锚点下方，引线就变成"从机器头顶往下垂"，指向关系彻底反了。
+    let cx = it._sx
+    const nearX = w / 2 + 6
+    const others = items.filter(q => q !== it && q._vis)
+    for (let guard = 0; guard < 8; guard++) {
+      const covered = others.find(o =>
+        Math.abs(cx - o._sx) < nearX && o._sy > ly - h && o._sy < ly + 4)
+      if (!covered) break
+      // 往"离它更远"的一侧挪：设备在本机右侧就向左让，反之向右
+      cx += (covered._sx > it._sx ? -1 : 1) * (nearX - Math.abs(cx - covered._sx) + 10)
+    }
+    // ⚠️ 不要在这里回写 it._cx —— 这个属性在循环里被读写（others 引用同一个对象），
+    //    改了会让后面设备的判据跟着变，产生顺序依赖的抖动。牌子实际中心直接用局部 cx。
+    it._cx = cx        // 仅供 QA 探针读（牌子实际中心），不参与本帧后续计算
+    placed.push({ l: cx - w / 2, r: cx + w / 2, t: ly - h, b: ly })
 
     // 覆盖 CSS2DRenderer 写的 transform（它只做点对点，不做避让）
     it.el.style.transform =
-      `translate(-50%, -100%) translate(${it._sx.toFixed(1)}px, ${ly.toFixed(1)}px)`
+      `translate(-50%, -100%) translate(${cx.toFixed(1)}px, ${ly.toFixed(1)}px)`
+    // ★ 引线必须从**标签底边**连回设备锚点。
+    //   标签用 translate(-50%,-100%) 定位，ly 是它的**底边** y；
+    //   早期把 y2 也写成 ly 就对了，但若标签内部有任何 margin/padding 影响 offsetHeight，
+    //   或者以后改成非 -100% 的定位方式，就会脱开。这里显式用「底边 = ly」，
+    //   并在量测阶段实测标签矩形校正，避免"线悬在牌子上方一截"的悬浮感。
+    // ★★ x2 必须用 cx（牌子实际中心）而不是 _sx（锚点横坐标）——
+    //   做了横向避让之后两者不再相等，写 _sx 会让线斜到牌子外面去。
+    const topY2 = it._vis ? ly : it._sy
     it.line.setAttribute('x1', it._sx.toFixed(1))
     it.line.setAttribute('y1', it._sy.toFixed(1))
-    it.line.setAttribute('x2', it._sx.toFixed(1))
-    it.line.setAttribute('y2', ly.toFixed(1))
+    it.line.setAttribute('x2', cx.toFixed(1))
+    it.line.setAttribute('y2', topY2.toFixed(1))
     it.dot.setAttribute('cx', it._sx.toFixed(1))
     it.dot.setAttribute('cy', it._sy.toFixed(1))
   })
@@ -3004,6 +3169,16 @@ function relayoutLabels() {
  * 拾取代理盒 —— 每台设备一个不可见 AABB。
  * hover/点击的射线只测这几个盒子，不再 intersectObjects(scene.children, true)
  * （那会把地面、天空球、网格、300 点微尘和全部设备子网格一起算：又慢，又容易被非设备物体抢命中）。
+ *
+ * ★★ 代理盒必须**只罩本体、且不放大**，这是"点 A 选中 B"的根因所在：
+ *    - 原实现把 X/Z 各乘 1.2，长条设备（宽 10.59 的皮带机）横向被撑到 12.7m，
+ *      而相邻设备的间距只有 6m 左右 → 两个盒子大面积互相覆盖，射线先命中谁都看运气。
+ *      实测传送带的拾取盒覆盖到了回水池身上，标签锚点射线打中的是 water_return。
+ *    - 但完全贴住本体又点不中：细杆件（支腿、拉绳）之间的空隙会让射线穿过去，
+ *      用户点在设备"中间"反而落空。所以改为：
+ *      ① 横向只收不放（宁可小一点，也不要覆盖邻居），并夹在半个格距内
+ *      ② **竖向放大**吸收零件之间的缝（没有人会对"头顶一点空气"主张这是另一台设备）
+ *      ③ 代理盒永远不进阴影/发光通道，material.visible=false 即不进渲染列表。
  */
 function buildPickProxy(group, equip) {
   const b = bodyBox(group)
@@ -3012,19 +3187,49 @@ function buildPickProxy(group, equip) {
   const center = b.getCenter(new THREE.Vector3())
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(
-      Math.max(size.x * 1.2, 1.7),
-      Math.max(size.y * 1.12, 2.0),
-      Math.max(size.z * 1.2, 1.7)
+      Math.min(Math.max(size.x, 1.6), PROXY_MAX_XZ),
+      Math.max(size.y * 1.25, 2.4),
+      Math.min(Math.max(size.z, 1.6), PROXY_MAX_XZ)
     ),
     new THREE.MeshBasicMaterial({ visible: false })   // material.visible=false → 不进渲染列表
   )
-  mesh.position.copy(center)
+  // 竖直方向以本体为中心微扩（ground 之上留一点，吸收支腿缝）
+  mesh.position.set(center.x, Math.max(center.y, 0.6), center.z)
   mesh.name = 'pickProxy'
   mesh.userData.equipId = equip.id
   mesh.userData.equip = equip
   scene.add(mesh)
   pickTargets.push(mesh)
+
+  // ★★ 再给"矮胖/长条"设备补一个精修盒（retina box）：
+  //    单一 AABB 对传送带这种 8m×1m 的长条只能取外包，
+  //    相邻的回水池在 Z 方向只差 4m，两个外包盒必然交叠 ——
+  //    实测落在皮带上的点，射线先穿过了回水池的盒子。
+  //    这里额外挂一个**中心区**小盒（各方向 60%），命中优先级高于外包盒：
+  //    用户在设备中心区域点击时，永远归它自己，不受邻居外包盒影响。
+  const inner = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      Math.min(Math.max(size.x * 0.6, 1.2), PROXY_MAX_XZ),
+      Math.max(size.y * 0.8, 1.6),
+      Math.min(Math.max(size.z * 0.6, 1.0), PROXY_MAX_XZ)
+    ),
+    new THREE.MeshBasicMaterial({ visible: false })
+  )
+  inner.position.copy(mesh.position)
+  // ⚠️ 名字必须是 pickProxy（与外包盒同名）。这里写成 'facilityProxy' 会让 QA 的
+  //    "载体代理数"把设备精修盒也算进去（16 → 26），并且点建筑会误取 userData.facility。
+  inner.name = 'pickProxy'
+  // 优先级：数字越大越先被选中（pickEquipmentAt 里按这个排序）
+  mesh.userData.pickPriority = 0
+  inner.userData.pickPriority = 1
+  inner.userData.equipId = equip.id
+  inner.userData.equip = equip
+  scene.add(inner)
+  pickTargets.push(inner)
 }
+
+/** 拾取盒横向最大边长：设备布局是约 6m 的格距，超过格距就会覆盖到邻居身上 */
+const PROXY_MAX_XZ = 5.4
 
 /** 功能载体建筑：id → group（供相机聚焦与高亮） */
 const facilityMeshes = new Map()
@@ -3071,7 +3276,28 @@ function buildFacilities() {
     if (i === 0) facilityMeshes.set('cctv', g)
     g.updateMatrixWorld(true)
     addFacilityPickProxy(g, cctvMeta)
+    addPolePickProxy(g, cctvMeta, 8.4)
   })
+}
+
+/** 立杆专用拾取盒 —— 罩住 8.4m 高**杆身的中上段**，而不是整根的外包盒
+ *
+ *  ★ 为什么需要：立杆是 φ0.14 的细杆 + 顶上一个横臂，外包盒几乎只有杆身那么窄，
+ *    屏幕上宽不到 3px。而它下半截又常被水池/设备挡住 —— 用户看着杆子点下去，
+ *    射线先打到 8m 外的尾矿池（实测），立杆等于点不中。
+ *    这里单独加一个 1.6m×1.6m 的"可点柱"，覆盖从 3m 到杆顶的高度：
+ *    既保证杆子上半段整块可点，又不会像整栋楼那样把地面也吞进去。 */
+function addPolePickProxy(group, facility, h) {
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, h - 3.0, 1.6),
+    new THREE.MeshBasicMaterial({ visible: false })
+  )
+  m.position.set(group.position.x, (h + 3.0) / 2, group.position.z)
+  m.name = 'facilityProxy'
+  m.userData.facility = facility
+  m.userData.facilityId = facility.id
+  scene.add(m)
+  pickTargets.push(m)
 }
 
 /** 建筑拾取代理：按建筑**实际包围盒**生成（含屋顶，不外扩）
@@ -3101,6 +3327,31 @@ function addFacilityPickProxy(group, facility) {
   proxy.userData.facilityId = facility.id
   scene.add(proxy)
   pickTargets.push(proxy)
+
+  // ★★ 建筑徽标 —— "载体被设备挡住就点不动"的**兜底入口**。
+  //    现象（QA 实测）：相机飞到配电室/监控立杆的近景后，建筑的拾取盒
+  //    **整块**落在设备后面（配电室距离 16.7m，球磨机在 6.9m），画面里
+  //    那一带已经被机器占满 —— 用户看着楼、点下去进的是球磨机页面。
+  //    楼不能挪，所以给每栋楼补一个**始终浮在楼顶上方**的小徽标：
+  //    图标 + 名称，可点可双击，语义与点楼完全相同。
+  //    这也让"左栏列表 ↔ 3D 场景"多了一层一一对应的视觉锚点。
+  const badge = document.createElement('div')
+  badge.className = 'facility-badge'
+  badge.dataset.fid = facility.id
+  badge.innerHTML = `<i class="fb-dot"></i><span>${facility.name}</span>`
+  const badgeObj = new CSS2DObject(badge)
+  // 徽标高度用**世界坐标**反算：group 可能带旋转（配电室 rotY=-90°），
+  // 直接写 size.y 会按 group 自身坐标系挂上去，可能挂到楼的侧面去。
+  badgeObj.position.set(0, b.max.y - group.position.y + 0.5, 0)
+  group.add(badgeObj)
+  badge.addEventListener('click', (ev) => {
+    ev.stopPropagation()
+    selectFacility(facility)
+  })
+  badge.addEventListener('dblclick', (ev) => {
+    ev.stopPropagation()
+    if (facility.entries && facility.entries.length) router.push(facility.entries[0].path)
+  })
 }
 
 /** 标签聚焦：选中 > 悬停。聚焦项发亮、其余淡出，配合引线把"牌 ↔ 设备"钉死 */function applyLabelFocus() {
@@ -3368,26 +3619,90 @@ let dragging = false        // 正在拖拽旋转
 let hoverRaf = 0            // hover 检测的 rAF 句柄（mousemove 高频，合并到每帧一次）
 const lastPointer = { x: 0, y: 0 }
 
-/** 射线拾取：只测代理盒（7 个），返回命中的设备；无命中返回 null */
-function pickEquipmentAt(clientX, clientY) {
-  if (!canvasContainer.value || !camera || !pickTargets.length) return null
+/**
+ * 射线拾取设备 —— 只测设备代理盒，返回命中的设备。
+ *
+ * ★★ 命中顺序必须按"设备优先"排，不能只认最近的盒子：
+ *    建筑代理盒（facilityProxy，中控室/配电室那些）体量大、往往比设备更靠近相机，
+ *    若直接取 hits[0]，站在厂房前面点设备会被建筑"抢答"。
+ *    实测尾矿池的锚点射线第一命中就是 facilityProxy（dist 5.2），设备本身在 16.7 之外。
+ *    设备是操作主体、建筑是入口容器 —— 同一射线上两者都命中时，设备优先。
+ */
+/**
+ * 射线拾取（设备 + 建筑，**一次射线判远近**）
+ *
+ * ★★ 为什么必须合并成一次：早先是两个函数各自跑一遍射线 ——
+ *    pickEquipmentAt 只要有设备就返回（"设备优先"），pickFacilityAt 只要有建筑就返回。
+ *    调用方先问设备、设备没有才问建筑。这在"设备被楼挡住"时是对的
+ *    （点楼前面的人不该选到楼里的人），但在"设备在楼后面"时完全错了：
+ *    实测监控立杆的拾取盒在 13.9m，尾矿池/加药装置在 20.5m，
+ *    画面里杆子清清楚楚在前面 —— 点下去却进了「水处理加药装置」。
+ *    所以判据必须是**距离**：谁离相机近就是谁。同一位置并列时设备优先
+ *    （设备是操作主体、建筑只是入口容器）。
+ *
+ * 返回 { equip, facility }，可同时为 null。
+ */
+function pickAtPoint(clientX, clientY) {
+  const EMPTY = { equip: null, facility: null }
+  if (!canvasContainer.value || !camera || !pickTargets.length) return EMPTY
   const rect = canvasContainer.value.getBoundingClientRect()
   mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1
   mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1
   raycaster.setFromCamera(mouse, camera)
   const hits = raycaster.intersectObjects(pickTargets, false)
-  return hits.length ? hits[0].object.userData.equip : null
+  if (!hits.length) return EMPTY
+
+  // 设备候选：按优先级筛（精修盒 > 外包盒），同优先级才比距离
+  const eqHits = hits.filter(h => h.object.userData.equip)
+  let bestEquip = null
+  if (eqHits.length) {
+    const topPri = Math.max(...eqHits.map(h => h.object.userData.pickPriority || 0))
+    bestEquip = eqHits.filter(h => (h.object.userData.pickPriority || 0) === topPri)[0]
+  }
+  const bestFacility = hits.find(h => h.object.userData.facility) || null
+
+  if (bestEquip && bestFacility) {
+    // 距离差 < 0.4m 视为并列 → 设备优先（避免"点在机器的地脚螺栓上却选中了楼"）
+    if (bestEquip.distance <= bestFacility.distance + 0.4) {
+      return { equip: bestEquip.object.userData.equip, facility: null }
+    }
+    return { equip: null, facility: bestFacility.object.userData.facility }
+  }
+  return {
+    equip: bestEquip ? bestEquip.object.userData.equip : null,
+    facility: bestFacility ? bestFacility.object.userData.facility : null,
+  }
 }
 
-/** 射线拾取建筑：与设备共用 pickTargets，用 userData 区分类型 */
-function pickFacilityAt(clientX, clientY) {
+function pickEquipmentAt(clientX, clientY) {
+  return pickAtPoint(clientX, clientY).equip
+}
+
+/** 只要"这一点上有没有落着这台设备"，不管建筑是否挡在前面
+ *
+ *  ★ 与 pickEquipmentAt 的差别是**语义**不是实现：
+ *    pickEquipmentAt 回答"用户点下去该选谁"（建筑真在前面时就不该选设备）；
+ *    本函数回答"这个设备的锚点是不是就在这里" —— QA 用它验标签对应关系，
+ *    锚点落在设备自己的拾取盒里就算对，即使那栋楼恰好在更前面。
+ *    （实测：尾矿池/加药装置在厂房东侧，建筑代理盒在当前机位下盖在它们前面，
+ *      用 pickEquipmentAt 验锚点会得到 null，误判成"标签指错设备"。） */
+function equipmentUnderPoint(clientX, clientY) {
   if (!canvasContainer.value || !camera || !pickTargets.length) return null
   const rect = canvasContainer.value.getBoundingClientRect()
   mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1
   mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1
   raycaster.setFromCamera(mouse, camera)
-  const hits = raycaster.intersectObjects(pickTargets, false)
-  return hits.length ? (hits[0].object.userData.facility || null) : null
+  const eqHits = raycaster.intersectObjects(pickTargets, false)
+    .filter(h => h.object.userData.equip)
+  if (!eqHits.length) return null
+  const topPri = Math.max(...eqHits.map(h => h.object.userData.pickPriority || 0))
+  return eqHits.filter(h => (h.object.userData.pickPriority || 0) === topPri)[0]
+    .object.userData.equip
+}
+
+/** 射线拾取建筑：与设备共用同一次射线结果（判据见 pickAtPoint） */
+function pickFacilityAt(clientX, clientY) {
+  return pickAtPoint(clientX, clientY).facility
 }
 
 /** 左栏当前"被 3D 点亮的"公辅条目（点击建筑后短暂高亮，把两侧钉在一起） */
@@ -3398,6 +3713,11 @@ let hotFacilityTimer = null
 function selectFacility(facility) {
   if (!facility) return
   hotFacilityId.value = facility.id
+  // 3D 徽标同步点亮 —— CSS2D 的 DOM 在画布层外面，Vue 的 :class 管不到它，
+  // 必须手动切（否则左栏亮了、画面里的楼没反应，两边还是割裂的）
+  document.querySelectorAll('.facility-badge').forEach((el) => {
+    el.classList.toggle('is-hot', el.dataset.fid === facility.id)
+  })
 
   const g = facilityMeshes.get(facility.id)
   if (g) {
@@ -3655,10 +3975,10 @@ function animateCamera(targetPos, lookAt) {
 
 /** 重置相机视角 */
 function resetCamera() {
-  animateCamera(
-    new THREE.Vector3(14, 10, 14),
-    SCENE_CENTER.clone()
-  )
+  // ★ 必须与初始机位一致 —— 之前"复位"回到 (14,10,14)，比首屏更近：
+  //   复位后配电室又滑出画面，用户会以为"复位把楼弄丢了"。
+  // ★ 也不能写死 (21,14,26.5)：窄屏首屏是后撤过的，写死复位会把画面拉近一截。
+  animateCamera(HOME_POS(), HOME_AIM.clone())
   selectedEquipment.value = null
   resetHighlights()
 }
@@ -3909,6 +4229,56 @@ function onResize() {
   if (composer) composer.setSize(w, h)
   // composer.setSize 会把 bloom 重置成全分辨率 → 这里再压回半分辨率
   if (bloomPass) bloomPass.setSize(Math.floor(w * BLOOM_SCALE), Math.floor(h * BLOOM_SCALE))
+  fitHomeDistance()
+}
+
+/**
+ * 按视口宽高比自适应机位距离 —— 保证**配电室**（东北角那栋楼）始终完整落在画面内。
+ *
+ * ★ 为什么必须做：透视相机的水平视野 = 垂直 fov × aspect。笔记本 1440×900 时
+ *   3D 视口只有约 928×560（左栏吃掉 500px），aspect 掉到 1.66，
+ *   水平半角从 33° 缩到 29° —— 配电室被挤出右边界，画面上整栋楼不见了。
+ *   这里按 aspect 反算需要拉远多少，并叠加一个 FIT_MIN_SCALE 的保底后撤。
+ *
+ * 只动**相机距离**，不动 fov：广角会带来明显透视畸变，厂房会"歪"。
+ */
+const HOME_AIM = new THREE.Vector3(-0.5, 1.7, 0)
+const HOME_DIR = new THREE.Vector3(21 - HOME_AIM.x, 14 - HOME_AIM.y, 26.5 - HOME_AIM.z)
+const HOME_DIST = HOME_DIR.length()      // 1920 基准距离
+const HOME_ASPECT = 1408 / 979           // 1920 下 3D 视口的宽高比
+
+/**
+ * 统一机位倍率。
+ * ★★ 为什么在 1920 上也要退：配电室（东北角 12.9,-12.1）在基准机位下
+ *    楼体右缘投影 x1≈1902，视口右界 1900 —— 贴着边缘只露一条缝；
+ *    1440/1600 更惨（满屏只剩一个蓝色徽标在画外缘）。
+ *    而配电室主体又被厂房钢柱压住西半边，挪位置只会撞上球磨机。
+ *    退 8% 换来的余量，比继续微调位置更可靠：三个尺寸一次全落在框内。
+ */
+const FIT_MIN_SCALE = 1.08
+
+/**
+ * 按当前相机宽高比算出「首屏 / 复位」的落点。
+ * ★ 复位也走这里 —— 否则窄屏复位回的是 1920 的机位，配电室又滑出画面。
+ */
+function HOME_POS() {
+  const k = (camera && camera.aspect < HOME_ASPECT) ? HOME_ASPECT / camera.aspect : 1
+  const dist = HOME_DIST * Math.min(Math.max(k, FIT_MIN_SCALE), 1.55)
+  return HOME_DIR.clone().normalize().multiplyScalar(dist).add(HOME_AIM)
+}
+
+function fitHomeDistance() {
+  if (!camera) return
+  camera.position.copy(HOME_POS())
+  // ⚠️ controls 在 initScene 里比相机晚创建：首帧调用时它还不存在，
+  //    直接写 controls.target 会抛 "Cannot read properties of undefined"，
+  //    整个 3D 初始化就此中断（页面上只剩一句"3D 场景初始化失败"）。
+  if (controls) {
+    controls.target.copy(HOME_AIM)
+    controls.update()
+  } else {
+    camera.lookAt(HOME_AIM)
+  }
 }
 
 // ── 计算属性 ──────────────────────────────────────
@@ -5541,22 +5911,75 @@ const typeNames = {
   pointer-events: none;
   overflow: visible;
 }
-/* 三档：默认很淡（不然 7 条线会织成蜘蛛网）→ 聚焦亮起 → 其余设备淡出 */
+/* 三档：默认清晰可读 → 聚焦亮起 → 其余设备淡出
+   ⚠️ 早期是 1px / 0.42 透明：在深色画面上几乎看不见，于是"标签挂在空中"——
+      观众只能猜这个牌子属于哪台设备。引线的职责就是**指认归属**，
+      弱到看不见等于没有。这里改成 1.6px + 0.72，并给端点加实心锚点圆。 */
 .leader-line {
-  stroke: rgba(178, 206, 232, 0.9);
-  stroke-width: 1;
-  opacity: 0.42;
+  stroke: rgba(196, 220, 244, 0.95);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  /* 深色场景上叠一层暗描边，压住设备亮面，保证线在任何背景上都读得出来 */
+  paint-order: stroke;
+  opacity: 0.72;
   transition: opacity 0.25s ease;
 }
 .leader-dot {
-  fill: rgba(214, 234, 252, 0.95);
-  opacity: 0.52;
+  fill: rgba(226, 240, 255, 1);
+  stroke: rgba(20, 30, 44, 0.85);
+  stroke-width: 1.2;
+  opacity: 0.85;
   transition: opacity 0.25s ease;
 }
 .leader-line.is-focus { opacity: 0.92; }
 .leader-dot.is-focus { opacity: 1; }
 .leader-line.dim { opacity: 0.07; }
 .leader-dot.dim { opacity: 0.1; }
+
+/* 载体建筑徽标 —— 悬在楼顶上方的小标签，是"楼被设备挡住"时唯一可点的入口。
+   刻意做得比设备读数牌轻：它是"区域名"不是"设备读数"，不该抢设备的信息权重。
+   ⚠️ 必须 position:absolute（理由同 .equip-label：CSS2D 靠 transform 定位，
+      元素若在文档流里会被前面的节点挤偏，牌子与楼对不上）。 */
+.facility-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(22, 93, 255, 0.22);
+  color: #2b4c7e;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(20, 40, 80, 0.14);
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.facility-badge .fb-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #165dff;
+  box-shadow: 0 0 0 3px rgba(22, 93, 255, 0.12);
+}
+.facility-badge:hover {
+  background: #fff;
+  border-color: #165dff;
+  transform: translateY(-1px);
+}
+.facility-badge.is-hot {
+  background: #165dff;
+  border-color: #165dff;
+  color: #fff;
+}
+.facility-badge.is-hot .fb-dot { background: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3); }
 
 .equip-label {
   display: inline-flex !important;
