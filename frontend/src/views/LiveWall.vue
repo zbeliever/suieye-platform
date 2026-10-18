@@ -1088,6 +1088,34 @@ onUnmounted(() => {
   color: var(--text-4);
 }
 
+/* ══════ 工艺流程节点：按视口分三档 ══════
+   为什么需要分档：5 个节点 + 4 个箭头挤在流程区里，节点宽度随视口线性缩小。
+   实测（内距 14px + 图标 15 + 间距 7 时）：
+     1920 → 节点 145px，名称/指标全放得下
+     1584 → 节点 99px，留给"安全巡检"只剩 47px（需 52px）→ 被截成"安全…"
+     1366 → 节点 71px，怎么调都放不下
+   所以 1920（演示尺寸）保持大气排版，中等屏收紧，极窄屏再做取舍。 */
+
+/* 中等屏（≤1700）：把内距/图标/字号各收一档，名称可用 61px → 4 字完整 */
+@media (max-width: 1700px) {
+  .flow-node { padding: 11px 10px; }
+  .node-head { gap: 5px; }
+  .node-icon { font-size: 13px; }
+  .node-name { font-size: 13px; }
+  /* 指标 14px：该档节点内宽 77px，「底流 67.71%」15px 需 80px、14px 约 75px */
+  .node-metric { font-size: 14px; letter-spacing: -0.4px; }
+  .node-ledger { font-size: 11px; }
+}
+
+/* 极窄屏（≤1400）：名称（导航依据）优先保证完整，指标数字允许省略号收尾。
+   ⚠️ 试过把节点改成 3 列两行 —— 名称数字确实全露出来了，但左列高度从 ~150px
+      涨到 254px，直接挤掉下面的「品位趋势」主图（768 高度下主区只有 409px）。
+      **主图 > 节点全名**，所以保持单行。 */
+@media (max-width: 1400px) {
+  .flow-node { padding: 10px 7px; }
+  .node-metric { font-size: 13px; letter-spacing: -0.6px; }
+}
+
 /* ============ 品位趋势（主视觉） ============ */
 .trend-panel {
   flex: 1;

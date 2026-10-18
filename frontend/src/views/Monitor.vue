@@ -615,7 +615,9 @@ function ensureChart() {
   const el = chartEl.value
   if (!el) return
   if (!chart) {
-    chart = echarts.init(el)
+    // ★ 先问 DOM 上有没有现成实例：HMR 热更新、或初始化时序穿插时，
+    //   chart 变量可能与真实实例脱钩，直接 init 会再挂一个 ECharts 实例上去。
+    chart = echarts.getInstanceByDom(el) || echarts.init(el)
     return
   }
   if (!el.clientWidth || !el.clientHeight) return
@@ -636,7 +638,13 @@ onMounted(async () => {
   catch (e) { bands.value = {} }
   await nextTick()
   if (chartEl.value) {
-    chart = echarts.init(chartEl.value)
+    // ★★ 必须走 ensureChart()，不能直接 echarts.init()：
+    //    上面两个 await 期间 dayData 已经落值，watch(dayData) 会先触发一次
+    //    ensureChart() → 图表**已经初始化过了**。这里再 init 一次就是
+    //    "There is a chart instance already initialized on the dom"，
+    //    而且旧实例被覆盖后永远不会 dispose（canvas 留在 DOM 里 = 泄漏）。
+    //    时序坑：只在数据返回快时才复现，慢网络下反而看不到。
+    ensureChart()
     renderChart()
     window.addEventListener('resize', onResize)
     document.addEventListener('visibilitychange', onVisible)
