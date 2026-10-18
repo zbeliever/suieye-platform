@@ -153,23 +153,92 @@ const segmentStats = computed(() => {
   })
 })
 
-/** 流程外功能：无法挂到 3D 工艺链上的独立能力
+/** 工艺链导航数据：段 + 段内功能入口 + 段内设备（供左栏展开）
+ *  功能入口 = 段主功能 + 可选的 altRoute（尾矿段里水设备单独走水质监测） */
+const navSegments = computed(() =>
+  segmentStats.value.map((seg) => {
+    const entries = [{ path: seg.route, label: seg.routeLabel }]
+    if (seg.altRoute) entries.push({ path: seg.altRoute.route, label: seg.altRoute.label })
+    const eqs = seg.equipIds
+      .map((eid) => equipments.value.find((e) => e.id === eid))
+      .filter(Boolean)
+      .map((e) => ({ id: e.id, name: e.name, status: e.status, health: e.health }))
+    return { ...seg, entries, eqs }
+  })
+)
+
+/** 当前展开的工艺段（手风琴：同时只展开一段，避免左栏无限变长） */
+const expandedSeg = ref(null)
+
+/** 点工艺段行 = 相机飞过去 + 展开/收起设备与功能 */
+function toggleSegment(seg) {
+  expandedSeg.value = expandedSeg.value === seg.id ? null : seg.id
+  focusSegment(seg)
+}
+
+/** 公辅与中控：把"流程外功能"按**厂区里的物理载体**归位
  *
- *  为什么这些必须放侧栏而不是 3D：
- *   - 水位/水质是 W1~W5 五点位的整体系，3D 里只建了尾矿池与回水池两处实体，
- *     点某一台池子只能代表它自己，代表不了全厂水质 → 需要独立入口。
- *   - 报表 / 告警 / 配药 / 时光机 / 直播墙 都是"跨段视角"的功能，
- *     不属于任何单一工艺环节，硬塞进某段会误导。
- *   - 设置是系统级，与工艺无关。
- */
-const sideTools = [
-  { path: '/water', label: '水质监测', desc: 'W1~W5 全五点 + 回用指数', icon: 'Drizzling' },
-  { path: '/alarms', label: '告警中心', desc: '分级处置与闭环', icon: 'Bell' },
-  { path: '/reports', label: '报表统计', desc: '品位趋势与告警分析', icon: 'Document' },
-  { path: '/dosing', label: '配药助手', desc: '药剂配比建议', icon: 'FirstAidKit' },
-  { path: '/timemachine', label: '工况时光机', desc: '历史记录回溯', icon: 'Search' },
-  { path: '/livewall', label: '直播墙', desc: '全流程总览大屏', icon: 'VideoCamera' },
-  { path: '/settings', label: '系统设置', desc: '场景与阈值配置', icon: 'Setting' },
+ *  ★ 这是本次重构的核心思路：3D 厂区不是设备的陈列柜，而是整个系统的入口。
+ *    所以功能不该以"平铺菜单"的形式挂在左侧，而该挂到它真实发生的**那间屋子**上：
+ *      · 报表/告警/时光机/总览  → 中控室（都是中控楼里的大屏与工位）
+ *      · 配药助手               → 药剂间（药剂制备的地方）
+ *      · 系统设置               → 配电室（机柜与开关柜所在）
+ *      · 浮选/安全工作台         → 化验室（取样化验与工艺调整）
+ *      · 直播墙                 → 监控立杆（4 路摄像头的挂载点）
+ *    左侧按这个结构排列，就与 3D 场景里的建筑一一对应 —— 左侧是"厂区导览"，
+ *    不再是"功能清单"。后续阶段会在 3D 里把这些建筑实体建出来，点建筑进同一页。
+ *
+ *  每项 entries 是该建筑里能进的平台功能；单入口的载体只放一个。 */
+const NAV_FACILITIES = [
+  {
+    id: 'control_room',
+    name: '中控室',
+    tag: '中控楼 · 二层',
+    icon: 'Monitor',
+    desc: '全厂监视与调度中心',
+    entries: [
+      { path: '/dashboard',    label: '生产总览' },
+      { path: '/alarms',       label: '告警中心' },
+      { path: '/reports',      label: '报表统计' },
+      { path: '/timemachine',  label: '工况时光机' },
+    ],
+  },
+  {
+    id: 'lab',
+    name: '化验室',
+    tag: '中控楼 · 一层',
+    icon: 'DataAnalysis',
+    desc: '取样化验与工艺调整',
+    entries: [
+      // 磨矿工作台已有独立的工艺段落点（磨矿段 → 粒度分析），这里不重复列
+      { path: '/workbench/flotation', label: '浮选工作台' },
+      { path: '/workbench/safety',    label: '安全工作台' },
+    ],
+  },
+  {
+    id: 'dosing_room',
+    name: '药剂间',
+    tag: '浮选厂房 · 北侧',
+    icon: 'FirstAidKit',
+    desc: '药剂制备与添加',
+    entries: [{ path: '/dosing', label: '配药助手' }],
+  },
+  {
+    id: 'power_room',
+    name: '配电室',
+    tag: '公辅区 · 东侧',
+    icon: 'Cpu',
+    desc: '供配电与机柜',
+    entries: [{ path: '/settings', label: '系统设置' }],
+  },
+  {
+    id: 'cctv',
+    name: '监控立杆',
+    tag: '厂区沿线 · 4 路',
+    icon: 'VideoCamera',
+    desc: '全流程摄像点位',
+    entries: [{ path: '/livewall', label: '直播墙' }],
+  },
 ]
 
 // ── 弹窗状态 ────────────────────────────────────────
@@ -326,6 +395,18 @@ function placeAllEquipments() {
       ev.stopPropagation()
       focusEquipment(equip.id)
     })
+
+    // ★ 双击牌子 = 直接进这台设备所属的功能页。
+    //   必须单独绑在标签上：标签是 pointer-events:auto 且 stopPropagation 的，
+    //   双击事件**根本冒泡不到画布** —— 只给 canvas 加 dblclick 的话，
+    //   用户去双击那个看得见的名字牌会毫无反应（这几乎是所有人的第一反应）。
+    //   标签是画面里唯一"看得见又点得到"的东西，所以它是双击的主入口。
+    label.element.addEventListener('dblclick', (ev) => {
+      ev.stopPropagation()
+      const target = routeFor(equip.id)
+      if (target) router.push(target.route)
+    })
+    label.element.title = `单击查看详情 · 双击进入「${routeFor(equip.id)?.label || '功能页'}」`
 
     // 引线（屏幕空间 SVG）+ 布局登记
     const leaderEls = registerLabel(equip, model, label, topY)
@@ -2788,6 +2869,11 @@ function registerLabel(equip, group, label, topY) {
   const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
   dot.setAttribute('class', 'leader-dot')
   dot.setAttribute('r', '2.6')
+  // ★ 标记归属设备：这个圆点画在**设备锚点**的屏幕坐标上，
+  //   是"设备本体在画面上的确切位置"。标签本身会因为避让偏离本体，
+  //   拿标签中心去点会打到它背后的设备（QA 实测：双击渣浆泵跳进了球磨机的页面）。
+  //   有了这个属性，自动化测试才能打到"真的那台设备"。
+  dot.setAttribute('data-equip-id', equip.id)
   if (leaderSvg) {
     leaderSvg.appendChild(line)
     leaderSvg.appendChild(dot)
@@ -3287,6 +3373,28 @@ function onMouseClick(event) {
   deselectEquipment()
 }
 
+/** 双击设备 → 直接进入它所属工艺段的功能页
+ *
+ *  交互分工（避免"单击就跳走"导致误操作）：
+ *    · 单击 = 看（弹详情卡：指标 / 趋势 / 预测维护，仍留在 3D 里）
+ *    · 双击 = 进（一步到功能页，现场演示最快的那条路）
+ *  两条路的落点由 routeFor() 统一决定，和详情卡上的「进入XXX」按钮完全一致。
+ *  ⚠️ 与单击一样必须筛 target + 判拖拽：双击的第二下同样会冒泡、
+ *     也有人在双击时手抖拖了一点视角。 */
+function onCanvasDblClick(event) {
+  if (!canvasContainer.value || !renderer) return
+  if (event.target !== renderer.domElement) return
+  if (pointerDownAt) {
+    const moved = Math.hypot(event.clientX - pointerDownAt.x, event.clientY - pointerDownAt.y)
+    if (moved > 6) return
+  }
+  const equip = pickEquipmentAt(event.clientX, event.clientY)
+  if (!equip) return
+  const target = routeFor(equip.id)
+  if (!target) return          // 没挂功能的设备，双击保持原样（不跳空页）
+  router.push(target.route)
+}
+
 function selectEquipment(equip) {
   selectedEquipment.value = equip
   applyLabelFocus()
@@ -3539,6 +3647,7 @@ onMounted(() => {
 
   if (canvasContainer.value) {
     canvasContainer.value.addEventListener('click', onMouseClick)
+    canvasContainer.value.addEventListener('dblclick', onCanvasDblClick)
     canvasContainer.value.addEventListener('mousemove', onMouseMove)
     canvasContainer.value.addEventListener('pointerdown', onPointerDownEvent)
     canvasContainer.value.addEventListener('pointerup', onPointerUpEvent)
@@ -3589,6 +3698,7 @@ onBeforeUnmount(() => {
   if (dockObserver) { dockObserver.disconnect(); dockObserver = null }
   if (canvasContainer.value) {
     canvasContainer.value.removeEventListener('click', onMouseClick)
+    canvasContainer.value.removeEventListener('dblclick', onCanvasDblClick)
     canvasContainer.value.removeEventListener('mousemove', onMouseMove)
     canvasContainer.value.removeEventListener('pointerdown', onPointerDownEvent)
     canvasContainer.value.removeEventListener('pointerup', onPointerUpEvent)
@@ -3701,49 +3811,92 @@ function healthColor(h) {
 
     <!-- ══ 主内容区 ══ -->
     <div class="main-layout">
-      <!-- 左侧内栏：流程外功能入口（3D 工艺链覆盖不到的功能都收在这里） -->
+      <!-- 左侧内栏：厂区导览（工艺链 + 公辅载体）
+           ★ 设计意图：这一栏不是"功能清单"，而是**厂区的目录**。
+             上面一截是物料流经的工艺链（与 3D 里的管线一一对应），
+             下面一截是中控室/化验室/药剂间/配电室/监控立杆这些**建筑**，
+             每个功能都挂在它真实发生的那间屋子里。
+             这样无论从左侧点、还是从 3D 里点建筑，进的是同一个门。 -->
       <div class="side-panel">
-        <div class="panel-header">功能导航</div>
+        <div class="panel-header">
+          厂区导览
+          <span class="panel-sub">工艺链 · 功能落点</span>
+        </div>
         <div class="side-scroll">
-          <!-- 一、工艺段：与 3D 流程对应，点一下直接进 -->
+          <!-- 一、工艺链：纵向物料流，段与段之间用时间轴连线贯穿 -->
           <div class="side-group">
             <div class="side-group-title">工艺流程</div>
-            <div
-              v-for="seg in segmentStats"
-              :key="seg.id"
-              class="seg-item"
-              :class="{ 'is-primary': seg.primary, 'is-active': activeSegment?.id === seg.id }"
-              @click="focusSegment(seg)"
-            >
-              <i class="seg-bar" :style="{ background: seg.color }"></i>
-              <div class="seg-body">
-                <div class="seg-row">
-                  <span class="seg-name">{{ seg.name }}</span>
-                  <span v-if="seg.count" class="seg-health">{{ seg.avgHealth ?? '—' }}<em>%</em></span>
+            <div class="chain">
+              <div
+                v-for="seg in navSegments"
+                :key="seg.id"
+                class="chain-node"
+                :class="{ 'is-primary': seg.primary, 'is-active': activeSegment?.id === seg.id, 'is-open': expandedSeg === seg.id }"
+              >
+                <div class="chain-row" @click="toggleSegment(seg)">
+                  <i class="chain-dot" :style="{ background: seg.color }"></i>
+                  <span class="chain-name">{{ seg.name }}</span>
+                  <span v-if="seg.count" class="chain-health" :style="{ color: seg.bad ? '#f53f3f' : (seg.avgHealth < 60 ? '#ff7d00' : '#5c6b7f') }">
+                    {{ seg.avgHealth ?? '—' }}<em>%</em>
+                  </span>
+                  <el-icon class="chain-caret" :class="{ 'is-open': expandedSeg === seg.id }"><ArrowRight /></el-icon>
                 </div>
-                <div class="seg-meta">
-                  <span>{{ seg.count }} 台</span>
+
+                <!-- 段摘要：台数 + 异常，收起时也看得到 -->
+                <div class="chain-meta">
+                  <span>{{ seg.count }} 台设备</span>
                   <span v-if="seg.bad" class="seg-bad">{{ seg.bad }} 故障</span>
                   <span v-else-if="seg.warn" class="seg-warn">{{ seg.warn }} 预警</span>
-                  <span v-else class="seg-ok">正常</span>
+                  <span v-else class="seg-ok">全部正常</span>
+                </div>
+
+                <!-- 展开区：功能入口 + 设备清单 -->
+                <div v-show="expandedSeg === seg.id" class="chain-drawer">
+                  <div class="drawer-label">进入功能</div>
+                  <button
+                    v-for="en in seg.entries"
+                    :key="en.path"
+                    class="fn-chip is-main"
+                    :style="{ '--c': seg.color }"
+                    @click.stop="enterSegmentDirect({ ...seg, route: en.path, routeLabel: en.label })"
+                  >
+                    <span>{{ en.label }}</span>
+                    <el-icon><ArrowRight /></el-icon>
+                  </button>
+                  <div class="drawer-label">段内设备</div>
+                  <div
+                    v-for="eq in seg.eqs"
+                    :key="eq.id"
+                    class="eq-mini"
+                    @click.stop="focusEquipment(eq.id)"
+                  >
+                    <i class="eq-dot" :class="`dot-${eq.status}`"></i>
+                    <span class="eq-mini-name">{{ eq.name }}</span>
+                    <span class="eq-mini-h" :style="{ color: healthColor(eq.health) }">{{ eq.health }}%</span>
+                  </div>
                 </div>
               </div>
-              <el-icon class="seg-arrow" title="进入该段功能" @click.stop="enterSegmentDirect(seg)">
-                <ArrowRight />
-              </el-icon>
             </div>
           </div>
 
-          <!-- 二、流程外功能：无法挂在工艺链上的独立能力 -->
+          <!-- 二、公辅与中控：功能在厂区里的物理载体 -->
           <div class="side-group">
-            <div class="side-group-title">独立功能</div>
-            <router-link v-for="item in sideTools" :key="item.path" :to="item.path" class="tool-item">
-              <el-icon class="tool-icon"><component :is="item.icon" /></el-icon>
-              <div class="tool-body">
-                <span class="tool-name">{{ item.label }}</span>
-                <span class="tool-desc">{{ item.desc }}</span>
+            <div class="side-group-title">公辅与中控</div>
+            <div v-for="f in NAV_FACILITIES" :key="f.id" class="facility">
+              <div class="fac-row">
+                <el-icon class="fac-icon"><component :is="f.icon" /></el-icon>
+                <span class="fac-name">{{ f.name }}</span>
+                <span class="fac-tag">{{ f.tag }}</span>
               </div>
-            </router-link>
+              <div class="fac-chips">
+                <router-link
+                  v-for="en in f.entries"
+                  :key="en.path"
+                  :to="en.path"
+                  class="fn-chip"
+                >{{ en.label }}</router-link>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -3818,7 +3971,7 @@ function healthColor(h) {
               <span>状态</span>
               <span :class="`st-${hoveredEquipment.status}`">{{ statusLabel(hoveredEquipment.status) }}</span>
             </div>
-            <div class="hover-card-hint">单击查看详情与处置</div>
+            <div class="hover-card-hint">单击看详情 · 双击进功能</div>
           </template>
         </div>
 
@@ -3976,7 +4129,7 @@ function healthColor(h) {
 
         <!-- 视图提示 -->
         <div class="view-hint">
-          拖拽旋转 · 滚轮缩放 · 点击设备查看详情 · 点左侧列表飞向机位并高亮物料链
+          拖拽旋转 · 滚轮缩放 · 单击设备看详情 · 双击设备进功能 · 点左侧工艺段飞向机位
         </div>
       </div>
 
@@ -4363,6 +4516,16 @@ const typeNames = {
   color: #607d8b;
   border-bottom: 1px solid #eee;
   background: #ffffff;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+/* 副标题：说明这一栏到底是什么（是"厂区目录"，不是功能清单） */
+.panel-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: #a9b2bd;
+  letter-spacing: 0.2px;
 }
 .side-scroll {
   flex: 1;
@@ -4390,35 +4553,49 @@ const typeNames = {
   padding: 0 6px 6px;
 }
 
-/* 工艺段条目：色条 + 名称/工况 + 快捷进入
-   ⚠️ 行内用 grid 而非 space-between：
-      space-between 在段名较短（"浮选段"）时会把健康度推到最右，
-      中间留出大片空白，读起来像两列脱节的数据。 */
-.seg-item {
+/* ══════ 工艺链（纵向时间轴）══════
+   设计意图：4 个工艺段不是 4 个并列的按钮，而是**同一条物料流上的 4 个站点**。
+   所以用一条贯穿的竖线把它们串起来，节点圆点用各段主题色 ——
+   这比"色条 + 卡片"更能表达"从磨矿到回水"的先后关系。 */
+.chain { position: relative; }
+.chain-node {
+  position: relative;
+  padding-bottom: 2px;
+}
+/* 连线：从本节点圆点下沿连到下一个节点；最后一段不画，避免悬空一截 */
+.chain-node:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 21px;
+  bottom: 0;
+  width: 1px;
+  background: #e2e8f0;
+}
+.chain-dot {
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  /* 白圈把连线"打断"，圆点才像站点而不是线上的一个色块 */
+  box-shadow: 0 0 0 3px #fff;
+  z-index: 1;
+}
+.chain-row {
   display: flex;
-  align-items: stretch;
-  padding: 6px 6px 6px 0;
-  border-radius: 6px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 4px 2px 18px;
   cursor: pointer;
-  transition: background 0.18s;
-  margin-bottom: 1px;
+  border-radius: 5px;
+  transition: background 0.16s;
 }
-.seg-item:hover { background: #f5f8ff; }
-.seg-item.is-active { background: #eef4ff; box-shadow: inset 0 0 0 1px rgba(22,93,255,0.28); }
-.seg-bar {
-  width: 3px;
-  border-radius: 2px;
-  flex-shrink: 0;
-  margin-right: 9px;
-}
-.seg-body { flex: 1; min-width: 0; }
-.seg-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  column-gap: 8px;
-}
-.seg-name {
+.chain-row:hover { background: #f5f8ff; }
+.chain-name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: #2b3648;
@@ -4426,59 +4603,145 @@ const typeNames = {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.seg-item.is-primary .seg-name { color: #165dff; }
-.seg-health {
+.chain-node.is-primary .chain-name { color: #165dff; }
+.chain-node.is-active .chain-name { color: #165dff; }
+.chain-health {
   font-size: 12px;
   font-weight: 600;
-  color: #5c6b7f;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  flex-shrink: 0;
 }
-.seg-health em { font-style: normal; font-size: 10px; color: #98a2b0; margin-left: 1px; }
-.seg-meta {
+.chain-health em { font-style: normal; font-size: 10px; color: #98a2b0; margin-left: 1px; }
+.chain-caret {
+  font-size: 11px;
+  color: #c2cad4;
+  flex-shrink: 0;
+  transition: transform 0.2s, color 0.2s;
+}
+.chain-node:hover .chain-caret { color: #165dff; }
+.chain-caret.is-open { transform: rotate(90deg); color: #165dff; }
+.chain-meta {
   display: flex;
   gap: 7px;
   font-size: 11px;
   color: #9aa4b1;
-  margin-top: 2px;
+  padding: 0 4px 8px 18px;
 }
 .seg-bad { color: #f53f3f; font-weight: 600; }
 .seg-warn { color: #ff7d00; font-weight: 600; }
 .seg-ok { color: #00b42a; }
-/* 进入箭头：贴在最右，hover 才显眼（避免每条都抢注意力） */
-.seg-arrow {
-  align-self: center;
-  font-size: 12px;
-  color: #c2cad4;
-  flex-shrink: 0;
-  margin-left: 2px;
-  padding: 4px;
-  border-radius: 4px;
-  transition: color 0.18s, background 0.18s;
-}
-.seg-item:hover .seg-arrow { color: #165dff; background: #e8f0fe; }
 
-/* 独立功能条目 */
-.tool-item {
+/* 展开区：这块是"点开一段之后才出现"的二级内容 */
+.chain-drawer {
+  margin: 0 4px 8px 18px;
+  padding: 8px 9px 9px;
+  background: #f7f9fc;
+  border: 1px solid #edf1f7;
+  border-radius: 6px;
+}
+.drawer-label {
+  font-size: 10px;
+  color: #a3adb9;
+  letter-spacing: 0.4px;
+  margin: 0 0 5px;
+}
+.drawer-label + .fn-chip + .drawer-label,
+.fn-chip + .drawer-label { margin-top: 9px; }
+/* 功能入口小药丸：主入口用段主题色描边，一眼区分"这是能进去的" */
+.fn-chip {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  transition: background 0.18s;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 9px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #2b3648;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 5px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.16s, color 0.16s, background 0.16s;
+}
+.fn-chip:hover {
+  border-color: var(--c, #165dff);
+  color: var(--c, #165dff);
+  background: #fff;
   text-decoration: none;
 }
-.tool-item:hover { background: #f7f8fa; text-decoration: none; }
-.tool-icon { font-size: 15px; color: #7a8699; flex-shrink: 0; }
-.tool-body { display: flex; flex-direction: column; min-width: 0; }
-.tool-name { font-size: 13px; color: #2b3648; font-weight: 500; }
-.tool-desc {
-  font-size: 11px;
-  color: #a3adb9;
-  margin-top: 1px;
+.fn-chip .el-icon { font-size: 11px; opacity: 0.7; }
+.fn-chip.is-main { border-color: var(--c, #165dff); color: var(--c, #165dff); font-weight: 600; }
+
+/* 段内设备小行 */
+.eq-mini {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #4f5b66;
+}
+.eq-mini:hover { background: #eef4ff; }
+.eq-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  background: #00b42a;
+}
+.eq-dot.dot-warning { background: #ff7d00; }
+.eq-dot.dot-danger { background: #f53f3f; }
+.eq-dot.dot-stopped { background: #9e9e9e; }
+.eq-mini-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eq-mini-h { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+/* ══════ 公辅载体：功能在厂区里的"那间屋子" ══════ */
+.facility {
+  padding: 7px 6px 8px;
+  border-radius: 6px;
+  transition: background 0.16s;
+}
+.facility:hover { background: #f9fbfe; }
+.fac-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+.fac-icon { font-size: 14px; color: #7a8699; flex-shrink: 0; }
+.fac-name { font-size: 13px; font-weight: 600; color: #2b3648; flex-shrink: 0; }
+.fac-tag {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  color: #a9b2bd;
+  text-align: right;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.fac-chips { display: flex; flex-wrap: wrap; gap: 5px; padding-left: 21px; }
+.fac-chips .fn-chip {
+  width: auto;
+  justify-content: center;
+  margin-bottom: 0;
+  padding: 4px 9px;
+}
+
+/* ══════ 矮屏紧凑化 ══════
+   左栏是"4 段 + 5 处载体"的固定结构，内容高度基本恒定；
+   768 高度下可用区只有 ~627px，实测溢出 42px → 会多出一条滚动条。
+   这里按**视口高度**收（不是宽度）：1920x1080 完全不受影响，
+   1366x768 这种矮屏才触发，把 42px 从各处内距里省回来。 */
+@media (max-height: 820px) {
+  .side-group { margin-bottom: 10px; }
+  .chain-row { padding-top: 4px; }
+  .chain-meta { padding-bottom: 6px; }
+  .chain-drawer { padding: 6px 8px 7px; margin-bottom: 6px; }
+  .facility { padding: 5px 6px 6px; }
+  .fac-row { margin-bottom: 5px; }
 }
 
 /* 设备状态点（沿用旧样式，被折叠清单复用） */
