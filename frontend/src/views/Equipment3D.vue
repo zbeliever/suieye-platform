@@ -21,6 +21,16 @@ import {
   boltGeos, blockGeos, cylGeos, rodGeos, boltRowGeos,
   nameplateMesh, hazardStripeMesh,
 } from '../utils/equipDetails.js'
+// 功能载体建筑：中控室 / 化验室 / 药剂间 / 配电室 / 监控立杆
+// —— 让"流程外的平台功能"在厂区里有真实的落点，而不是只存在于左栏列表里
+import {
+  buildControlRoom, buildLab, buildDosingRoom, buildPowerRoom, buildCctvPole,
+} from '../utils/facilityBuildings.js'
+// 厂区空间：厂房骨架 / 地坪标线 / 管廊 / 围墙
+// —— 设备再细，摆在一片空旷网格上也只是"陈列品"；这一层把旷野变成车间
+import {
+  buildWorkshopFrame, buildFloorMarkings, buildPipeRack, buildPerimeter,
+} from '../utils/workshopStructures.js'
 
 // ── 页面状态 ────────────────────────────────────────
 const router = useRouter()
@@ -316,6 +326,8 @@ const equipments = ref([])
 const equipmentStats = ref({ total: 0, running: 0, warning: 0, danger: 0, avg_health: 0 })
 const lastUpdateTime = ref(null)
 const isLoading = ref(true)
+/** 3D 场景初始化失败时的错误文案（为空表示正常） */
+const sceneError = ref('')
 let refreshTimer = null
 let dockObserver = null   // 监听操作日志高度变化 → 同步设备清单位置
 const REFRESH_INTERVAL = 5000 // 5 秒刷新一次
@@ -932,6 +944,27 @@ const EQUIP_LAYOUT = {
 function equipPos(id, equip) {
   return EQUIP_LAYOUT[id] || equip?.position || [0, 0, 0]
 }
+
+/** 功能载体建筑的位置与朝向
+ *
+ *  摆位原则（按相机在东南方向 (16.5, 11, 20.5) 俯视来组织）：
+ *   · 中控楼（中控室 + 化验室）放**北侧远景**：作为厂房背景，同时不遮挡设备
+ *   · 药剂间放**西侧**，紧邻浮选段（agitator 在 x=-9.5），加药管往东接进浮选
+ *   · 配电室放**东侧**，靠近用电大户球磨机（x=10.5）
+ *   · 监控立杆放**南侧前沿**两处，模拟厂区周界监控
+ *  这些位置都留出了设备本体（x -9.5~10.5 / z -5.5~10）的活动空间，不会互相穿插。 */
+const FACILITY_LAYOUT = {
+  control_room: { pos: [-3.0, 0, -16.5], rotY: 0 },
+  lab:          { pos: [-13.5, 0, -14.5], rotY: 0 },
+  dosing_room:  { pos: [-18.5, 0, 1.5],  rotY: Math.PI / 2 },
+  power_room:   { pos: [ 18.0, 0, -1.0], rotY: -Math.PI / 2 },
+  cctv:         { pos: [ 14.5, 0, 15.5], rotY: 0 },
+}
+/** 第二根监控立杆（对角布置才像周界覆盖） */
+const CCTV_SPOTS = [
+  { pos: [ 14.5, 0, 15.5], rotY: Math.PI * 0.85 },
+  { pos: [-18.5, 0, 14.0], rotY: -Math.PI * 0.15 },
+]
 
 // ══════════════════════════════════════════════════
 //  设备建模工厂 — 用基础几何体组合成选矿设备
@@ -2384,6 +2417,19 @@ function initScene() {
     scene.add(zlabel)
   })
 
+  // ── 厂区空间（厂房骨架 / 地坪 / 管廊 / 围墙）──
+  // 顺序有讲究：先地坪（贴地面、带透明），再骨架，最后围墙 ——
+  // 透明物的渲染次序影响观感，地坪标线必须先于钢结构入场景。
+  scene.add(buildFloorMarkings())
+  scene.add(buildWorkshopFrame())
+  scene.add(buildPipeRack())
+  scene.add(buildPerimeter())
+
+  // ── 功能载体建筑（中控室/化验室/药剂间/配电室/监控立杆）──
+  // 它们是静态的、与实时数据无关，所以在这里一次性建好；
+  // 不放进 placeAllEquipments，避免每次 5 秒轮询都重建一遍。
+  buildFacilities()
+
   // ── 放置设备（延迟到数据加载后由 placeAllEquipments 执行） ──
   // 设备模型创建和放置在 fetchEquipmentData → placeAllEquipments 中完成
 
@@ -2395,6 +2441,7 @@ function initScene() {
     window.__eq3d = {
       renderer, scene, camera, composer, bloomPass, pickTargets, hoveredId, hoverPos, labelItems,
       controls,            // 相机轨道控制器：QA 用它读"当前绕谁转"（controls.target）
+      facilityMeshes,      // 功能载体建筑 group（QA 用它数建筑、读位置）
       // 量化"每次 hover 检测"的射线开销：旧实现 = 全场景递归（含 300 点微尘），新实现 = 7 个盒子
       benchRaycast: (n = 200) => {
         const rc = new THREE.Raycaster()
@@ -2979,8 +3026,84 @@ function buildPickProxy(group, equip) {
   pickTargets.push(mesh)
 }
 
-/** 标签聚焦：选中 > 悬停。聚焦项发亮、其余淡出，配合引线把"牌 ↔ 设备"钉死 */
-function applyLabelFocus() {
+/** 功能载体建筑：id → group（供相机聚焦与高亮） */
+const facilityMeshes = new Map()
+
+/**
+ * 建出 5 处功能载体并摆位。
+ *
+ * 为什么建筑也要"可拾取"：
+ *   左栏的"公辅与中控"已经列了这些功能，但如果 3D 里的房子点不动，
+ *   左侧和场景就还是两套东西 —— 那正是要消灭的"菜单感"。
+ *   这里给每栋建筑挂一个隐形 AABB 代理盒（和设备同一套机制），
+ *   点建筑 = 左栏对应条目亮起并滚入视野；双击 = 直接进功能。
+ */
+function buildFacilities() {
+  const meta = new Map(NAV_FACILITIES.map((f) => [f.id, f]))
+  const defs = [
+    { id: 'control_room', make: buildControlRoom },
+    { id: 'lab',          make: buildLab },
+    { id: 'dosing_room',  make: buildDosingRoom },
+    { id: 'power_room',   make: buildPowerRoom },
+  ]
+  for (const d of defs) {
+    const m = meta.get(d.id)
+    if (!m) continue
+    const g = d.make()
+    const L = FACILITY_LAYOUT[d.id]
+    g.position.set(L.pos[0], L.pos[1], L.pos[2])
+    g.rotation.y = L.rotY
+    g.userData.facility = m
+    scene.add(g)
+    facilityMeshes.set(d.id, g)
+    g.updateMatrixWorld(true)
+    addFacilityPickProxy(g, m)
+  }
+
+  // 监控立杆两根（对角覆盖厂区周界），共用同一份元数据
+  const cctvMeta = meta.get('cctv')
+  CCTV_SPOTS.forEach((spot, i) => {
+    const g = buildCctvPole()
+    g.position.set(spot.pos[0], spot.pos[1], spot.pos[2])
+    g.rotation.y = spot.rotY
+    g.userData.facility = cctvMeta
+    scene.add(g)
+    if (i === 0) facilityMeshes.set('cctv', g)
+    g.updateMatrixWorld(true)
+    addFacilityPickProxy(g, cctvMeta)
+  })
+}
+
+/** 建筑拾取代理：按建筑**实际包围盒**生成（含屋顶，不外扩）
+ *
+ *  ★ 曾经只罩"底部 4m"，理由是怕大盒子误命中 —— 那是错的：
+ *    · 盒子不会超过建筑本身（Box3 就是从建筑几何算出来的），不会罩住楼顶上的空气
+ *    · 而只罩底部会带来更严重的问题：远处建筑的下半截**被前面的设备挡住**，
+ *      射线先打到设备，于是"看得见的楼顶点不动、看不见的楼底才点得动" ——
+ *      实测中控室和化验室就这样完全点不中。
+ *    所以这里给满高度，横向留 4% 余量（避免贴边点不中）。 */
+function addFacilityPickProxy(group, facility) {
+  const b = new THREE.Box3().setFromObject(group)
+  if (b.isEmpty()) return
+  const size = b.getSize(new THREE.Vector3())
+  const center = b.getCenter(new THREE.Vector3())
+  const proxy = new THREE.Mesh(
+    new THREE.BoxGeometry(
+      Math.max(size.x * 1.04, 1.2),
+      Math.max(size.y * 1.02, 1.6),
+      Math.max(size.z * 1.04, 1.2)
+    ),
+    new THREE.MeshBasicMaterial({ visible: false })
+  )
+  proxy.position.copy(center)
+  proxy.name = 'facilityProxy'
+  proxy.userData.facility = facility
+  proxy.userData.facilityId = facility.id
+  scene.add(proxy)
+  pickTargets.push(proxy)
+}
+
+/** 标签聚焦：选中 > 悬停。聚焦项发亮、其余淡出，配合引线把"牌 ↔ 设备"钉死 */function applyLabelFocus() {
   const focusId = selectedEquipment.value?.id || hoveredId.value || null
   equipmentMeshes.forEach((group, gid) => {
     const fx = group.userData.fx
@@ -3256,6 +3379,42 @@ function pickEquipmentAt(clientX, clientY) {
   return hits.length ? hits[0].object.userData.equip : null
 }
 
+/** 射线拾取建筑：与设备共用 pickTargets，用 userData 区分类型 */
+function pickFacilityAt(clientX, clientY) {
+  if (!canvasContainer.value || !camera || !pickTargets.length) return null
+  const rect = canvasContainer.value.getBoundingClientRect()
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1
+  raycaster.setFromCamera(mouse, camera)
+  const hits = raycaster.intersectObjects(pickTargets, false)
+  return hits.length ? (hits[0].object.userData.facility || null) : null
+}
+
+/** 左栏当前"被 3D 点亮的"公辅条目（点击建筑后短暂高亮，把两侧钉在一起） */
+const hotFacilityId = ref(null)
+let hotFacilityTimer = null
+
+/** 点建筑 = 相机飞过去 + 左栏对应条目高亮并滚入视野 */
+function selectFacility(facility) {
+  if (!facility) return
+  hotFacilityId.value = facility.id
+
+  const g = facilityMeshes.get(facility.id)
+  if (g) {
+    const c = new THREE.Box3().setFromObject(g).getCenter(new THREE.Vector3())
+    // 从前上方靠近：近景看清建筑立面，同时不钻进楼里
+    animateCamera(new THREE.Vector3(c.x + 11, c.y + 8.5, c.z + 15), c)
+  }
+
+  nextTick(() => {
+    const el = document.querySelector(`.facility[data-fid="${facility.id}"]`)
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+
+  if (hotFacilityTimer) clearTimeout(hotFacilityTimer)
+  hotFacilityTimer = setTimeout(() => { hotFacilityId.value = null }, 3000)
+}
+
 /** 切换 hover 目标（只在真正变化时才动 DOM/材质，避免每帧无谓重排） */
 function setHovered(equip) {
   const id = equip?.id || null
@@ -3369,6 +3528,13 @@ function onMouseClick(event) {
     highlightEquipment(equip.id)
     return
   }
+  // 没点中设备 → 看看是不是点了某栋功能载体建筑
+  const fac = pickFacilityAt(event.clientX, event.clientY)
+  if (fac) {
+    deselectEquipment()
+    selectFacility(fac)
+    return
+  }
   // 点击空白处取消选择
   deselectEquipment()
 }
@@ -3389,10 +3555,16 @@ function onCanvasDblClick(event) {
     if (moved > 6) return
   }
   const equip = pickEquipmentAt(event.clientX, event.clientY)
-  if (!equip) return
-  const target = routeFor(equip.id)
-  if (!target) return          // 没挂功能的设备，双击保持原样（不跳空页）
-  router.push(target.route)
+  if (equip) {
+    const target = routeFor(equip.id)
+    if (target) router.push(target.route)
+    return
+  }
+  // 双击建筑 → 直接进该建筑的首个功能（如双击中控室 → 生产总览）
+  const fac = pickFacilityAt(event.clientX, event.clientY)
+  if (fac && fac.entries && fac.entries.length) {
+    router.push(fac.entries[0].path)
+  }
 }
 
 function selectEquipment(equip) {
@@ -3636,8 +3808,19 @@ function renderPredictionChart() {
 }
 
 onMounted(() => {
-  initScene()           // 初始化 3D 场景（地面/灯光/相机，不放设备）
-  animate()             // 启动渲染循环
+  // ★ 场景初始化必须兜住异常：initScene 里是一长串建模代码（柱网/建筑/管线），
+  //   任何一处抛错都会中断后面所有步骤 —— 而 UI 还停在"正在加载设备数据..."，
+  //   看起来像"后端挂了"。实测踩过：一个变量声明顺序错了，整页黑屏且无任何提示。
+  //   这里把错误显式抛到界面上，至少能立刻看出是哪一段炸了。
+  try {
+    initScene()           // 初始化 3D 场景（地面/灯光/相机/厂房/建筑）
+    animate()             // 启动渲染循环
+  } catch (err) {
+    console.error('[Equipment3D] 场景初始化失败', err)
+    isLoading.value = false
+    sceneError.value = `3D 场景初始化失败：${err?.message || err}`
+    return
+  }
   fetchEquipmentData()  // 首次拉取数据 → 放置设备
   refreshLogs()         // 操作日志（后端落库，刷新不丢）
   fetchOrders()         // 工单角标：未闭环工单数
@@ -3882,7 +4065,13 @@ function healthColor(h) {
           <!-- 二、公辅与中控：功能在厂区里的物理载体 -->
           <div class="side-group">
             <div class="side-group-title">公辅与中控</div>
-            <div v-for="f in NAV_FACILITIES" :key="f.id" class="facility">
+            <div
+              v-for="f in NAV_FACILITIES"
+              :key="f.id"
+              class="facility"
+              :class="{ 'is-hot': hotFacilityId === f.id }"
+              :data-fid="f.id"
+            >
               <div class="fac-row">
                 <el-icon class="fac-icon"><component :is="f.icon" /></el-icon>
                 <span class="fac-name">{{ f.name }}</span>
@@ -3907,6 +4096,10 @@ function healthColor(h) {
         <div v-if="isLoading" class="loading-overlay">
           <div class="loading-spinner"></div>
           <span>正在加载设备数据...</span>
+        </div>
+        <!-- 场景初始化失败：不能只是黑屏，必须说清是哪一步炸了 -->
+        <div v-else-if="sceneError" class="loading-overlay is-error">
+          <span>{{ sceneError }}</span>
         </div>
 
         <!-- 数字孪生 HUD：色标解释 + 工况 + 数据同步时刻（3D 视图内部的数据锚定） -->
@@ -4704,6 +4897,12 @@ const typeNames = {
   transition: background 0.16s;
 }
 .facility:hover { background: #f9fbfe; }
+/* 在 3D 里点了这栋建筑 → 左栏对应条目亮一下，把"场景 ↔ 目录"钉在一起。
+   没有这个反馈，用户点完建筑只会觉得"镜头动了"，不知道它对应左栏哪一条。 */
+.facility.is-hot {
+  background: #eef4ff;
+  box-shadow: inset 0 0 0 1px rgba(22, 93, 255, 0.35);
+}
 .fac-row {
   display: flex;
   align-items: center;
@@ -5009,6 +5208,14 @@ const typeNames = {
   color: #fff;
   font-size: 14px;
   z-index: 20;
+}
+/* 初始化失败：红字提示具体哪一步炸了，而不是永远转圈 */
+.loading-overlay.is-error {
+  color: #ffb4b4;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 0 40px;
+  text-align: center;
 }
 .loading-spinner {
   width: 40px; height: 40px;
