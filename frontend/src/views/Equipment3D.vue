@@ -12,6 +12,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
 import api from '../api/index.js'
+// 全站唯一品牌区（图标 + 主副标题）。★ 禁止在页面里再手写一套：
+// 门面与直播墙曾各自实现，导致图标（方块/六边形）与字重（800/600）双双分叉。
+import BrandBlock from '../components/BrandBlock.vue'
 // 功能名唯一真源：目录卡里的入口文案一律取自这里，禁止手写
 // —— 同一页在两处叫不同名字（报表 / 报表统计）会让观众以为是两个功能
 import { workbenchEntryName } from '../utils/navMap'
@@ -4646,18 +4649,10 @@ function healthColor(h) {
     ════════════════════════════════════════════════════════════ -->
     <header class="facade-card">
       <div class="fc-main">
-        <div class="fh-brand">
-          <span class="fh-mark" aria-hidden="true"></span>
-          <div class="fh-names">
-            <!-- ★ 品牌名两段式：西文在前、中文在后，与老板定的全称一致
-                 「SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台」。
-                 主标题只放品牌（SuiEye + 淬眸），副标题放**完整定位**——
-                 门面是全站第一屏，这里必须出现一次系统的正式全称，
-                 否则访客看完不知道这套东西到底管什么。 -->
-            <h1 class="fh-title"><span class="fh-en">SuiEye</span> 淬眸</h1>
-            <p class="fh-sub">铅锌浮选全流程智能视觉分析平台</p>
-          </div>
-        </div>
+        <!-- 品牌区：图标/字号/字重全站唯一，见 components/BrandBlock.vue。
+             ★ 以前这里自写了一套（渐变方块 + 「SuiEye」单独 800 字重），
+               与直播墙的六边形标记 + 600 字重不一致。现已收口。 -->
+        <BrandBlock />
 
         <!-- 门面 KPI：每一格都标注口径，避免"把单次预测当全厂品位"的误读。
              ★ 2026-10-19：格子带状态色 —— 只有"需要注意"的转 warning/danger，
@@ -5427,47 +5422,11 @@ const typeNames = {
   padding: 12px 20px;
   box-sizing: border-box;
 }
-.fh-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-/* 品牌标记：抽象几何（两条相交斜纹），不用图标字体也不放 emoji */
-.fh-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background:
-    linear-gradient(135deg,
-      var(--color-primary) 0%, var(--color-primary) 46%,
-      transparent 46%, transparent 54%,
-      var(--brand-mark-2) 54%, var(--brand-mark-2) 100%);
-  flex-shrink: 0;
-}
-.fh-names { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.fh-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.2;
-  color: var(--text-1);
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-/* 西文品牌名：字号略大 + 收紧字距，让它承担"这是谁"的第一眼识别 */
-.fh-en {
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: -0.2px;
-}
-.fh-sub {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.2;
-  color: var(--text-3);
-  white-space: nowrap;
-}
+/* 品牌区（图标 + 主副标题）已抽到 components/BrandBlock.vue ——
+   ★ 原先这里有一整套 .fh-brand/.fh-mark/.fh-names/.fh-title/.fh-en/.fh-sub，
+     与本页的 4 格 KPI 同处一个 flex 行。删掉后由组件承担，避免"每个页面自己长一套"。
+   ★ 组件根节点需要 .fc-main 的 flex-shrink 语义，故在此约束（不影响其内部规格）。 */
+.fc-main > .brand-block { flex-shrink: 0; }
 
 /* 四格 KPI：等宽分栏（个数已知 → 用 repeat(4, ...)，避免 auto-fill 造出孤立格）
    ★ 层级：品牌那条竖线用 --border-1（跨组分隔），格间用 --border-2（同组内分栏）。

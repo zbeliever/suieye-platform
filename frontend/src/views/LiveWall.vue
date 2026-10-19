@@ -5,7 +5,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import api from '../api'
-import BrandMark from '../components/BrandMark.vue'
+import BrandBlock from '../components/BrandBlock.vue'
 import FrothLive from '../components/FrothLive.vue'
 import BackToFactory from '../components/BackToFactory.vue'
 
@@ -478,13 +478,8 @@ onUnmounted(() => {
   <div class="livewall">
     <!-- ============ 指挥条（无卡片，靠分隔线分层） ============ -->
     <header class="lw-topbar">
-      <div class="brand">
-        <BrandMark class="brand-mark" />
-        <div class="brand-text">
-          <h1>SuiEye 淬眸</h1>
-          <span class="brand-sub">铅锌浮选全流程智能视觉分析平台</span>
-        </div>
-      </div>
+      <!-- 品牌区：图标/字号/字重全站唯一，见 components/BrandBlock.vue -->
+      <BrandBlock />
       <div class="topbar-right">
         <!-- 返回厂区：极简模式（无边框面包屑样式），不抢指挥条的视觉 -->
         <BackToFactory compact />
@@ -764,35 +759,10 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--border-1);
   box-sizing: border-box;
 }
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  color: var(--color-primary);
-}
-.brand-text {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-}
-.brand-text h1 {
-  margin: 0;
-  font-size: 21px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.2px;
-  line-height: 1.25;
-}
-.brand-sub {
-  font-size: 12.5px;
-  color: var(--text-3);
-  border-left: 1px solid var(--border-1);
-  padding-left: 14px;
-}
+/* 品牌区（图标 + 主副标题）已抽到 components/BrandBlock.vue ——
+   ★ 原先这套 .brand/.brand-mark/.brand-text/.brand-sub 是 21px/600 + 34px 图标，
+     门面那套是 17px/700 + 28px 渐变方块，两者图标与字重都不同。
+     现在全站只有一份实现，指挥条不再单独定义品牌样式。 */
 .topbar-right {
   display: flex;
   align-items: center;

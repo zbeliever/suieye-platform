@@ -26,7 +26,6 @@
   --color-primary-hover: #0e4ed6;
   --color-primary-active: #0b3fb0;
   --color-primary-bg: #e8f3ff;      /* 主色淡背景，仅 active/hover 占位用 */
-  --brand-mark-2: #4b8bff;          /* 品牌标记渐变的浅端，仅 .fh-mark 用 */
   --text-inverse: #ffffff;          /* 深色/主色底上的文字 */
 
   /* ---- 状态色（只在成功/警告/危险状态用，不当装饰） ---- */
