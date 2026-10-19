@@ -520,7 +520,31 @@ const plantVerdict = computed(() => {
   const level = bad ? 'danger' : (notes.length ? 'warn' : 'ok')
   const head = level === 'ok' ? '全厂运行正常' : (level === 'danger' ? '有设备故障需处理' : '整体正常 · 需关注个别项')
 
-  return { level, head, notes: notes.slice(0, 3) }
+  const shown = notes.slice(0, 3)
+  return {
+    level,
+    head,
+    notes: shown,
+    // ★ 超过 3 条时如实报"另 N 项"：门面最忌"少了一条没人知道"
+    more: notes.length > shown.length ? `另 ${notes.length - shown.length} 项` : '',
+  }
+})
+
+/* 门面 KPI 的状态着色（2026-10-19）
+   ★ 只给"需要注意"的格子上色，正常的保持墨色 —— 四格都彩会变成红绿灯墙。
+   阈值与 healthColor() 严格一致（>=80 正常 / 50~80 预警 / <50 故障），
+   否则会出现"数字是橙的、结论条却说全厂正常"的自相矛盾。 */
+const healthTone = computed(() => {
+  const h = plantKpi.value.avgHealth
+  if (h == null || !isFinite(h)) return ''
+  if (h < 50) return 'is-danger'
+  if (h < 80) return 'is-warning'
+  return ''
+})
+const waterTone = computed(() => {
+  const a = plantKpi.value.waterAbnormal
+  if (a == null) return ''
+  return a > 0 ? 'is-warning' : ''
 })
 
 
@@ -4620,93 +4644,104 @@ function healthColor(h) {
              · 右边 = 只留"进入监控"这一个去处的入口，调试开关全部移除
          ★ 设备健康度没有丢：它仍在右侧「数字孪生同步」HUD 里按工况分档显示。
     ════════════════════════════════════════════════════════════ -->
-    <header class="facade-head">
-      <div class="fh-brand">
-        <span class="fh-mark" aria-hidden="true"></span>
-        <div class="fh-names">
-          <!-- ★ 品牌名两段式：西文在前、中文在后，与老板定的全称一致
-               「SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台」。
-               主标题只放品牌（SuiEye + 淬眸），副标题放**完整定位**——
-               门面是全站第一屏，这里必须出现一次系统的正式全称，
-               否则访客看完不知道这套东西到底管什么。 -->
-          <h1 class="fh-title"><span class="fh-en">SuiEye</span> 淬眸</h1>
-          <p class="fh-sub">铅锌浮选全流程智能视觉分析平台</p>
+    <header class="facade-card">
+      <div class="fc-main">
+        <div class="fh-brand">
+          <span class="fh-mark" aria-hidden="true"></span>
+          <div class="fh-names">
+            <!-- ★ 品牌名两段式：西文在前、中文在后，与老板定的全称一致
+                 「SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台」。
+                 主标题只放品牌（SuiEye + 淬眸），副标题放**完整定位**——
+                 门面是全站第一屏，这里必须出现一次系统的正式全称，
+                 否则访客看完不知道这套东西到底管什么。 -->
+            <h1 class="fh-title"><span class="fh-en">SuiEye</span> 淬眸</h1>
+            <p class="fh-sub">铅锌浮选全流程智能视觉分析平台</p>
+          </div>
+        </div>
+
+        <!-- 门面 KPI：每一格都标注口径，避免"把单次预测当全厂品位"的误读。
+             ★ 2026-10-19：格子带状态色 —— 只有"需要注意"的转 warning/danger，
+               正常的保持墨色（一屏只有一个主角，不是四格各自抢眼）。 -->
+        <div class="fh-kpis">
+          <div class="fh-kpi is-primary">
+            <span class="fk-label">Pb 品位均值</span>
+            <span class="fk-value">{{ fmt2(plantKpi.pbMean) }}<em>%</em></span>
+            <span class="fk-foot" v-if="plantKpi.gradeCount"
+              :title="`共 ${plantKpi.gradeCount.toLocaleString()} 次分析，统计区间 ${plantKpi.gradeFrom} ~ ${plantKpi.gradeTo}`">
+              {{ plantKpi.gradeCount.toLocaleString() }} 次分析
+              <template v-if="plantKpi.gradeFrom">· {{ plantKpi.gradeFrom }}~{{ plantKpi.gradeTo }}</template>
+            </span>
+            <span class="fk-foot" v-else>暂无记录</span>
+          </div>
+
+          <div class="fh-kpi" :title="latestTip">
+            <span class="fk-label">最新一次分析</span>
+            <span class="fk-value">{{ fmt2(plantKpi.pbLatest) }}<em>%</em></span>
+            <span class="fk-foot">
+              Pb · Zn {{ fmt2(plantKpi.znLatest) }}%<template v-if="latestDay"> · {{ latestDay }}</template>
+            </span>
+          </div>
+
+          <div class="fh-kpi" :class="waterTone">
+            <span class="fk-label">回用水质</span>
+            <span class="fk-value">{{ fmt1(plantKpi.reuseScore) }}<em>分</em></span>
+            <span class="fk-foot" v-if="plantKpi.waterStations != null">
+              {{ plantKpi.waterStations }} 个点位
+              <template v-if="plantKpi.waterAbnormal">· {{ plantKpi.waterAbnormal }} 处异常</template>
+              <template v-else>· 全部达标</template>
+            </span>
+            <span class="fk-foot" v-else>暂无数据</span>
+          </div>
+
+          <!-- ★ 这一格是「健康度」而不是「在役率」：
+               在役率恒为 100%（故障/预警的设备也在役），放在门面上没有信息量，
+               还会和结论条"1 台设备故障"直接打架。健康度才是真实差异指标。
+               副行把在役台数如实写出来，但不占主位。 -->
+          <div class="fh-kpi" :class="healthTone">
+            <span class="fk-label">设备健康度</span>
+            <span class="fk-value">{{ fmt1(plantKpi.avgHealth) }}<em>分</em></span>
+            <span class="fk-foot" v-if="plantKpi.total">
+              {{ plantKpi.inService ?? '—' }} / {{ plantKpi.total }} 台在役
+              <template v-if="plantKpi.attention">· {{ plantKpi.attention }} 台需关注</template>
+            </span>
+            <span class="fk-foot" v-else>正在接入</span>
+          </div>
+        </div>
+
+        <!-- 门面只留一个去处。原来这里还有 报修工单/标签/自转/静音/复位 —— 那是调试工具，
+             门面不该出现；需要它们时进 /monitor 或 /dashboard，各自都有。
+             ★ 2026-10-19 拍板（老板）：门面是展示层，下一步该去另一块展示层。
+               汇报动线 = 门面(讲厂区) → 直播墙(讲全厂运行) → 各专题页；
+               操作台则从"空间对象"进（点立杆看那路画面、点浮选段看那段工艺）。 -->
+        <div class="fh-actions">
+          <router-link to="/livewall" class="fh-cta">
+            <span>进入直播墙</span>
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </router-link>
         </div>
       </div>
 
-      <!-- 门面 KPI：每一格都标注口径，避免"把单次预测当全厂品位"的误读 -->
-      <div class="fh-kpis">
-        <div class="fh-kpi is-primary">
-          <span class="fk-label">Pb 品位均值</span>
-          <span class="fk-value">{{ fmt2(plantKpi.pbMean) }}<em>%</em></span>
-          <span class="fk-foot" v-if="plantKpi.gradeCount">
-            {{ plantKpi.gradeCount.toLocaleString() }} 次分析
-            <template v-if="plantKpi.gradeFrom">· {{ plantKpi.gradeFrom }}~{{ plantKpi.gradeTo }}</template>
-          </span>
-          <span class="fk-foot" v-else>暂无记录</span>
-        </div>
-
-        <div class="fh-kpi" :title="latestTip">
-          <span class="fk-label">最新一次分析</span>
-          <span class="fk-value">{{ fmt2(plantKpi.pbLatest) }}<em>%</em></span>
-          <span class="fk-foot">
-            Pb · Zn {{ fmt2(plantKpi.znLatest) }}%<template v-if="latestDay"> · {{ latestDay }}</template>
-          </span>
-        </div>
-
-        <div class="fh-kpi">
-          <span class="fk-label">回用水质</span>
-          <span class="fk-value">{{ fmt1(plantKpi.reuseScore) }}<em>分</em></span>
-          <span class="fk-foot" v-if="plantKpi.waterStations != null">
-            {{ plantKpi.waterStations }} 个点位
-            <template v-if="plantKpi.waterAbnormal">· {{ plantKpi.waterAbnormal }} 处异常</template>
-            <template v-else>· 全部达标</template>
-          </span>
-          <span class="fk-foot" v-else>暂无数据</span>
-        </div>
-
-        <!-- ★ 这一格是「健康度」而不是「在役率」：
-             在役率恒为 100%（故障/预警的设备也在役），放在门面上没有信息量，
-             还会和结论条"1 台设备故障"直接打架。健康度才是真实差异指标。
-             副行把在役台数如实写出来，但不占主位。 -->
-        <div class="fh-kpi">
-          <span class="fk-label">设备健康度</span>
-          <span class="fk-value">{{ fmt1(plantKpi.avgHealth) }}<em>分</em></span>
-          <span class="fk-foot" v-if="plantKpi.total">
-            {{ plantKpi.inService ?? '—' }} / {{ plantKpi.total }} 台在役
-            <template v-if="plantKpi.attention">· {{ plantKpi.attention }} 台需关注</template>
-          </span>
-          <span class="fk-foot" v-else>正在接入</span>
-        </div>
-      </div>
-
-      <!-- 门面只留一个去处。原来这里还有 报修工单/标签/自转/静音/复位 —— 那是调试工具，
-           门面不该出现；需要它们时进 /monitor 或 /dashboard，各自都有。
-           ★ 2026-10-19 拍板（老板）：门面是展示层，下一步该去另一块展示层。
-             汇报动线 = 门面(讲厂区) → 直播墙(讲全厂运行) → 各专题页；
-             操作台则从"空间对象"进（点立杆看那路画面、点浮选段看那段工艺）。 -->
-      <div class="fh-actions">
-        <router-link to="/livewall" class="fh-cta">
-          <span>进入直播墙</span>
-          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
-              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </router-link>
+      <!-- ══ 卡底状态带 ══
+           ★ 门面的"一句话"：四个 KPI 是数字，这一条把它们归并成判断，
+             并点出最值得注意的那一两项。访客不用自己比对数字就知道"现在好不好"。
+           ★★ 2026-10-19 二次重设计：从"通栏横幅"降级为"卡底脚注"——
+              宽度跟着卡走（不再左右贴屏把画面切成两段）、左侧 3px 状态竖条、
+              圆点去掉（竖条已表达状态，两个状态标记是冗余）。
+           ★ 老板拍板：level=ok 时**整条不渲染**，正常状态下门面就是一块干净页头，
+              省下的 30px 全给 3D 画面。 -->
+      <div class="fc-verdict" :class="`is-${plantVerdict.level}`"
+        v-if="kpiReady && plantVerdict.level !== 'ok'">
+        <strong class="vb-head">{{ plantVerdict.head }}</strong>
+        <span class="vb-sep" v-if="plantVerdict.notes.length" aria-hidden="true"></span>
+        <span v-for="(n, i) in plantVerdict.notes" :key="i" class="vb-note" :class="`is-${n.level}`">
+          {{ n.text }}
+        </span>
+        <span class="vb-more" v-if="plantVerdict.more">{{ plantVerdict.more }}</span>
       </div>
     </header>
-
-    <!-- ══ 全厂结论条 ══
-         ★ 门面的"一句话"：四个 KPI 是数字，这一条把它们归并成判断，
-           并点出最值得注意的那一两项。访客不用自己比对数字就知道"现在好不好"。 -->
-    <div class="verdict-bar" :class="`is-${plantVerdict.level}`" v-if="kpiReady">
-      <span class="vb-dot" aria-hidden="true"></span>
-      <strong class="vb-head">{{ plantVerdict.head }}</strong>
-      <span class="vb-sep" v-if="plantVerdict.notes.length" aria-hidden="true"></span>
-      <span v-for="(n, i) in plantVerdict.notes" :key="i" class="vb-note" :class="`is-${n.level}`">
-        {{ n.text }}
-      </span>
-    </div>
 
     <!-- ══ 主内容区 ══
          ★★ 2026-10-19 重构（老板拍板方案 B）：
@@ -5362,20 +5397,35 @@ const typeNames = {
   flex-direction: column;
   height: calc(100vh - 40px);
   gap: 0;
+  /* ★ 2026-10-19：页底改站内统一浅灰（--bg-3），门面白卡才有"浮起来"的边界。
+     以前是纯白底 + 白页头，等于页头没有形状。 */
+  background: var(--bg-3);
 }
 
-/* ── 门面页头 ──
-   ★ 与旧 .toolbar 的本质差别：旧的是"工具栏"（左边标题+标签、右边一排按钮），
-     新的是"厂牌 + 全厂仪表"——左侧品牌块承担"这是什么"，中间四格承担"现在怎样"，
-     右侧只留一个去处。视觉上也从"一条工具条"变成"一块页头"（更高的留白、分隔线）。 */
-.facade-head {
+/* ── 门面页头卡 ──
+   ★★ 2026-10-19 二次重设计（老板：这里也要重新设计）：
+     旧版 = 无边界横条 + 通栏结论条，三条左基线（logo 4 / 结论条 0 / KPI 190）互不齐，
+     和站内 11 页的白卡页头完全不是一套语言。
+     新版 = 一整块白卡（与 Panel 同规格：r8 / 1px border / 无阴影），
+     卡内三段（品牌 20 ｜ 4 栏 KPI ｜ CTA 20），结论带内嵌卡底。
+     实测高度 138 → 81（无异常）/ 111（有异常），3D 多出 27~57px。 */
+.facade-card {
+  flex-shrink: 0;
+  /* ★ 左右 20px：页头是"信息卡"，3D 区是"场景"——信息层内缩、场景铺满，
+     卡才有边界（铺满时白卡落在白底上等于没有形状，这是第一版没做出来的原因） */
+  margin: 0 20px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--panel-radius);
+  overflow: hidden;              /* 让卡底状态带被圆角裁掉，不出现直角溢出 */
+}
+.fc-main {
   display: flex;
   align-items: center;
-  gap: 28px;
-  padding: 0 20px 0 4px;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-  min-width: 0;
+  gap: 16px;
+  min-height: 78px;
+  padding: 12px 20px;
+  box-sizing: border-box;
 }
 .fh-brand {
   display: flex;
@@ -5385,12 +5435,14 @@ const typeNames = {
 }
 /* 品牌标记：抽象几何（两条相交斜纹），不用图标字体也不放 emoji */
 .fh-mark {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 7px;
   background:
-    linear-gradient(135deg, #165dff 0%, #165dff 46%, transparent 46%, transparent 54%, #4b8bff 54%, #4b8bff 100%);
-  box-shadow: 0 2px 8px rgba(22, 93, 255, 0.28);
+    linear-gradient(135deg,
+      var(--color-primary) 0%, var(--color-primary) 46%,
+      transparent 46%, transparent 54%,
+      var(--brand-mark-2) 54%, var(--brand-mark-2) 100%);
   flex-shrink: 0;
 }
 .fh-names { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -5399,7 +5451,7 @@ const typeNames = {
   font-size: 17px;
   font-weight: 700;
   line-height: 1.2;
-  color: #1a1a2e;
+  color: var(--text-1);
   letter-spacing: 0.2px;
   white-space: nowrap;
 }
@@ -5413,31 +5465,34 @@ const typeNames = {
   margin: 0;
   font-size: 11px;
   line-height: 1.2;
-  color: #8a94a6;
+  color: var(--text-3);
   white-space: nowrap;
 }
 
-/* 四格 KPI：等宽分栏（个数已知 → 用 repeat(4, ...)，避免 auto-fill 造出孤立格） */
+/* 四格 KPI：等宽分栏（个数已知 → 用 repeat(4, ...)，避免 auto-fill 造出孤立格）
+   ★ 层级：品牌那条竖线用 --border-1（跨组分隔），格间用 --border-2（同组内分栏）。
+     两条一样重会变成表格。 */
 .fh-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   flex: 1;
   min-width: 0;
-  border-left: 1px solid #e8ebf0;
+  border-left: 1px solid var(--border-1);
+  padding-left: 18px;
 }
 .fh-kpi {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 2px 18px;
+  padding: 0 16px;
   min-width: 0;
-  border-right: 1px solid #eef1f5;
+  border-right: 1px solid var(--border-2);
 }
 .fh-kpi:last-child { border-right: none; }
 .fk-label {
   font-size: 11px;
-  color: #8a94a6;
+  color: var(--text-3);
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -5445,22 +5500,28 @@ const typeNames = {
   font-size: 21px;
   font-weight: 700;
   line-height: 1.15;
-  color: #1a1a2e;
+  color: var(--text-1);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* 主角那一格（Pb 均值）用品牌色点出来，其余保持墨色 —— 一屏只有一个主角 */
-.fh-kpi.is-primary .fk-value { color: #165dff; }
+/* 主角那一格（Pb 均值）用品牌色点出来 —— 一屏只有一个主角 */
+.fh-kpi.is-primary .fk-value { color: var(--color-primary); }
+/* ★ 只有"需要注意"的格子上状态色（2026-10-19 新增）：
+   阈值与 healthColor() 一致，杜绝"数字橙色、结论条却说全厂正常" */
+.fh-kpi.is-warning .fk-value { color: var(--color-warning); }
+.fh-kpi.is-danger .fk-value { color: var(--color-danger); }
 .fk-value em {
   font-style: normal;
   font-size: 12px;
   font-weight: 600;
-  margin-left: 1px;
-  color: #8a94a6;
+  margin-left: 2px;
+  color: var(--text-3);
 }
+/* ★ 这行是口径说明（几条记录、什么区间）。原来 10.5px + #a2abb9 在 1440 下几乎读不清，
+   等于口径没写。提到 11px + --text-3，并给 title 兜住被省略的全文。 */
 .fk-foot {
-  font-size: 10.5px;
-  color: #a2abb9;
+  font-size: 11px;
+  color: var(--text-3);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -5468,83 +5529,94 @@ const typeNames = {
 }
 
 /* 右侧唯一去处 */
-.fh-actions { flex-shrink: 0; }.fh-cta {
+.fh-actions { flex-shrink: 0; }
+.fh-cta {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 32px;
   padding: 0 14px;
   border-radius: var(--radius-sm);
-  background: #165dff;
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--text-inverse);
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
-  transition: background 0.15s, transform 0.15s;
+  transition: background var(--transition);
 }
-.fh-cta:hover { background: #0e4fd8; }
+.fh-cta:hover { background: var(--color-primary-hover); }
 .fh-cta:hover svg { transform: translateX(2px); }
-.fh-cta svg { transition: transform 0.15s; }
+.fh-cta svg { transition: transform var(--transition); }
 
-/* ── 全厂结论条 ──
-   形态：一条极薄的横条，紧贴页头下沿。它不是"告警横幅"（那种红色通栏会显得出事故），
-   而是一条**状态摘要**：灰底 + 左侧一枚状态点。只有真的出故障才转红。 */
-.verdict-bar {
+/* ── 卡底状态带 ──
+   ★★ 从"通栏横幅"降级为"卡底脚注"：
+     旧版左右 margin 都是 0、宽 100%，把 3D 画面切成两段，读起来像事故横幅。
+     新版宽度跟着卡走、左侧 3px 状态竖条；圆点去掉（竖条已表达状态，两个标记是冗余）。
+   ★ 老板拍板：level=ok 时整条不渲染 —— 正常状态下门面就是一块干净页头。 */
+.fc-verdict {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 10px;
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  background: #f7f9fb;
-  border: 1px solid var(--border-1);
+  height: 30px;
+  padding: 0 20px;
   font-size: 12px;
   color: var(--text-2);
-  flex-shrink: 0;
+  background: var(--bg-2);
+  border-top: 1px solid var(--border-1);
 }
-.vb-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: #00b42a;
-  flex-shrink: 0;
+.fc-verdict::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--color-success);
 }
-.verdict-bar.is-warn { background: #fffbf3; border-color: #ffe4bf; }
-.verdict-bar.is-warn .vb-dot { background: #ff7d00; }
-.verdict-bar.is-danger { background: #fff5f3; border-color: #ffd3cc; }
-.verdict-bar.is-danger .vb-dot { background: #f53f3f; }
+.fc-verdict.is-warn {
+  background: var(--color-warning-light);
+  border-top-color: var(--color-warning-border);
+}
+.fc-verdict.is-warn::before { background: var(--color-warning); }
+.fc-verdict.is-danger {
+  background: var(--color-danger-light);
+  border-top-color: var(--color-danger-border);
+}
+.fc-verdict.is-danger::before { background: var(--color-danger); }
 .vb-head { font-weight: 600; color: var(--text-1); white-space: nowrap; }
 .vb-sep {
-  width: 1px; height: 11px;
+  width: 1px;
+  height: 11px;
   background: var(--border-1);
   flex-shrink: 0;
   margin: 0 2px;
 }
-.vb-note {
-  color: var(--text-2);
-  white-space: nowrap;
-}
-.vb-note.is-warn { color: #c05621; }
-.vb-note.is-danger { color: #d92f2f; font-weight: 500; }
+.vb-note { color: var(--text-2); white-space: nowrap; }
+.vb-note.is-warn { color: var(--color-warning-deep); }
+.vb-note.is-danger { color: var(--color-danger-deep); font-weight: 500; }
 /* 多条之间用细分隔点，别用逗号（中文逗号在这类短摘要里会被误读成句子结束） */
 .vb-note + .vb-note::before {
   content: '·';
   margin-right: 8px;
-  color: var(--text-4, #c9cdd4);
+  color: var(--text-4);
 }
+.vb-more { color: var(--text-3); white-space: nowrap; }
 
-/* 窄屏（≤1200）：页头换成两行，KPI 独占一行，避免四格被挤成竖排 */
+/* 窄屏（≤1200）：卡内换成两行，KPI 独占一行，避免四格被挤成竖排 */
 @media (max-width: 1200px) {
-  .facade-head { flex-wrap: wrap; gap: 10px 20px; padding: 8px 16px 0; }
+  .fc-main { flex-wrap: wrap; gap: 10px 16px; padding: 10px 16px; min-height: 0; }
   .fh-kpis {
     order: 3;
     flex-basis: 100%;
     border-left: none;
-    border-top: 1px solid #e8ebf0;
-    padding-top: 8px;
+    padding: 8px 0 0;
+    border-top: 1px solid var(--border-1);
   }
   .fh-kpi:first-child { padding-left: 0; }
   .fh-actions { margin-left: auto; }
-  .verdict-bar { margin: 8px 16px 10px; flex-wrap: wrap; }
+  .fc-verdict { padding: 0 16px; }
 }
 
 /* ── 旧工具栏样式（.toolbar/.stat-chips/.page-title）已随「设备监测中心」页头一并移除。

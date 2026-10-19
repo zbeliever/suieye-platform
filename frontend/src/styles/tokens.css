@@ -26,6 +26,8 @@
   --color-primary-hover: #0e4ed6;
   --color-primary-active: #0b3fb0;
   --color-primary-bg: #e8f3ff;      /* 主色淡背景，仅 active/hover 占位用 */
+  --brand-mark-2: #4b8bff;          /* 品牌标记渐变的浅端，仅 .fh-mark 用 */
+  --text-inverse: #ffffff;          /* 深色/主色底上的文字 */
 
   /* ---- 状态色（只在成功/警告/危险状态用，不当装饰） ---- */
   --color-success: #00b42a;
@@ -38,6 +40,9 @@
   --color-success-light: #e8ffea;
   --color-warning-light: #fff7e6;
   --color-danger-light: #ffece8;
+  /* 状态浅底的描边：浅底 + 同色系深一档的边，比纯灰边框更像"状态" */
+  --color-warning-border: #ffe4bf;
+  --color-danger-border: #ffd3cc;
 
   /* ---- 中性灰阶（全站主基调，不饱和） ---- */
   --text-1: #1d2129;        /* 主文字 */
@@ -48,7 +53,6 @@
   --bg-1: #ffffff;          /* 卡片白 */
   --bg-2: #f7f8fa;          /* 页面灰底 */
   --bg-3: #f2f3f5;          /* 容器深灰底 */
-  --bg-video: #0f1419;      /* 视频/画面舞台底（唯一的深色面，仅媒体区用） */
   --bg-video: #0f1419;      /* 视频/画面舞台底（唯一的深色面，仅媒体区用） */
   --bg-hover: #f2f3f5;      /* hover 中性灰，不用主色淡版 */
   --bg-active: #e8f3ff;     /* active 才用主色淡版 */
