@@ -3,7 +3,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 const router = useRouter()
 
@@ -104,8 +105,8 @@ function goReplay() {
 
 // ---- 格式化 ----
 const camStatusDot = (status) => ({
-  normal: '#00b42a', warning: '#ff7d00', danger: '#f53f3f',
-}[status] || '#86909c')
+  normal: 'var(--color-success)', warning: 'var(--color-warning)', danger: 'var(--color-danger)',
+}[status] || 'var(--text-3)')
 
 const camStatusLabel = (status) => ({
   normal: '正常运行', warning: '关注', danger: '告警',
@@ -138,46 +139,24 @@ onMounted(loadAll)
 </script>
 
 <template>
-  <div class="page" v-loading="loading">
-    <BackToFactory class="page-back" />
-    <!-- 页头 -->
-    <div class="header">
-      <div>
-        <h2>安全巡检</h2>
-        <p class="subtitle">皮带全线监控 · 隐患闭环管理 · {{ stats.total_count || 0 }} 条历史巡检记录</p>
-      </div>
-      <el-button type="primary" @click="goSpotCheck">
+  <PageShell
+    v-loading="loading"
+    title="安全巡检"
+    :sub="`皮带全线监控 · 隐患闭环管理 · ${stats.total_count || 0} 条历史巡检记录`"
+  >
+    <template #actions>
+      <el-button type="primary" size="small" @click="goSpotCheck">
         <el-icon style="margin-right:4px"><Camera /></el-icon>临时抽检
       </el-button>
-    </div>
+    </template>
 
-    <!-- KPI 条 -->
-    <el-row :gutter="16" class="stat-row">
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-number">{{ stats.today_count }}</div>
-          <div class="stat-label">今日巡检次数</div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card warn">
-          <div class="stat-number">{{ stats.hazard_open }}</div>
-          <div class="stat-label">待处理隐患</div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card danger-card">
-          <div class="stat-number">{{ stats.intrusion_30d }}</div>
-          <div class="stat-label">30天危险区入侵</div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover" class="stat-card ok">
-          <div class="stat-number">{{ fmtPct(stats.ppe_compliance_avg) }}</div>
-          <div class="stat-label">PPE 平均合规率（30天）</div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!-- 四格 KPI 统一走 StatCard（原先 4 张 el-card 各自 30px 数字 + 四色） -->
+    <template #kpi>
+      <StatCard label="今日巡检次数" :value="stats.today_count" />
+      <StatCard label="待处理隐患" :value="stats.hazard_open" tone="warning" />
+      <StatCard label="30 天危险区入侵" :value="stats.intrusion_30d" tone="danger" />
+      <StatCard label="PPE 平均合规率（30 天）" :value="fmtPct(stats.ppe_compliance_avg)" tone="success" />
+    </template>
 
     <!-- 主区两栏 -->
     <el-row :gutter="16">
@@ -207,7 +186,7 @@ onMounted(loadAll)
                   <img :src="imgUrl(cam.latest.detection_overlay)" alt="检测叠加" />
                 </div>
                 <div class="cam-thumb cam-thumb-empty" v-else>
-                  <el-icon size="32" color="#c9cdd4"><Picture /></el-icon>
+                  <el-icon size="32" color="var(--text-4)"><Picture /></el-icon>
                 </div>
                 <div class="cam-metrics">
                   <div class="metric">
@@ -315,76 +294,64 @@ onMounted(loadAll)
         </div>
       </div>
     </el-card>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.page { max-width: 1400px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
-.header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-h2 { color: #1d2129; margin: 0 0 4px; font-size: 22px; }
-.subtitle { color: #86909c; font-size: 13px; margin: 0; }
-
-.stat-row { margin-bottom: 16px; }
-.stat-card { text-align: center; padding: 12px 0; }
-.stat-card .stat-number { font-size: 30px; font-weight: 700; color: #165dff; }
-.stat-card .stat-label { font-size: 13px; color: #86909c; margin-top: 4px; }
-.stat-card.warn .stat-number { color: #ff7d00; }
-.stat-card.danger-card .stat-number { color: #f53f3f; }
-.stat-card.ok .stat-number { color: #00b42a; }
-
+/* 页头/留白/返回入口由 PageShell 统一提供（2026-10-19 一致性整治） */
 .section-card { margin-bottom: 16px; }
-.section-title { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #1d2129; }
+.section-title { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-1); }
 
 /* 点位网格 */
 .camera-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.camera-card { border: 1px solid #f2f3f5; border-radius: 6px; padding: 12px; background: #fff; }
-.camera-card.danger { border-color: #f53f3f; box-shadow: 0 0 0 1px rgba(245,108,108,0.2); }
-.camera-card.warning { border-color: #ff7d00; }
+.camera-card { border: 1px solid var(--bg-3); border-radius: 6px; padding: 12px; background: var(--bg-1); }
+.camera-card.danger { border-color: var(--color-danger); box-shadow: 0 0 0 1px rgba(245,108,108,0.2); }
+.camera-card.warning { border-color: var(--color-warning); }
 .cam-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.cam-name { font-weight: 600; color: #1d2129; display: flex; align-items: center; gap: 6px; }
+.cam-name { font-weight: 600; color: var(--text-1); display: flex; align-items: center; gap: 6px; }
 .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px currentColor; }
-.cam-zone { font-size: 12px; color: #86909c; margin-bottom: 8px; }
+.cam-zone { font-size: 12px; color: var(--text-3); margin-bottom: 8px; }
 .cam-body { display: flex; gap: 10px; }
-.cam-thumb { flex: 0 0 160px; height: 100px; overflow: hidden; border-radius: 4px; background: #f7f8fa; }
+.cam-thumb { flex: 0 0 160px; height: 100px; overflow: hidden; border-radius: 4px; background: var(--bg-2); }
 .cam-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .cam-thumb-empty { display: flex; align-items: center; justify-content: center; }
 .cam-metrics { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .metric { display: flex; justify-content: space-between; font-size: 13px; }
-.m-label { color: #86909c; }
-.m-value { color: #1d2129; font-weight: 500; }
-.m-danger { color: #f53f3f; margin-left: 4px; }
-.cam-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; color: #86909c; }
+.m-label { color: var(--text-3); }
+.m-value { color: var(--text-1); font-weight: 500; }
+.m-danger { color: var(--color-danger); margin-left: 4px; }
+.cam-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; color: var(--text-3); }
 
 /* 隐患工单 */
 .ticket-tabs { margin-bottom: 8px; }
 .ticket-list { max-height: 460px; overflow-y: auto; }
-.ticket-card { border-left: 3px solid #ff7d00; background: #fafafa; padding: 8px 10px; margin-bottom: 8px; border-radius: 4px; }
-.ticket-card.danger { border-left-color: #f53f3f; background: #fef0f0; }
-.t-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; color: #86909c; }
+.ticket-card { border-left: 3px solid var(--color-warning); background: #fafafa; padding: 8px 10px; margin-bottom: 8px; border-radius: 4px; }
+.ticket-card.danger { border-left-color: var(--color-danger); background: #fef0f0; }
+.t-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; color: var(--text-3); }
 .t-time { margin-left: auto; }
-.t-title { font-size: 13px; color: #1d2129; line-height: 1.4; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.t-detail { font-size: 12px; color: #4e5969; margin-bottom: 4px; }
-.t-assignee { font-size: 12px; color: #86909c; }
+.t-title { font-size: 13px; color: var(--text-1); line-height: 1.4; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.t-detail { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+.t-assignee { font-size: 12px; color: var(--text-3); }
 .t-actions { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
-.empty-tip { text-align: center; color: #c9cdd4; padding: 30px 0; font-size: 13px; }
+.empty-tip { text-align: center; color: var(--text-4); padding: 30px 0; font-size: 13px; }
 
 /* 巡检记录流 */
 .timeline-card { margin-top: 0; }
 .timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.tl-item { border: 1px solid #f2f3f5; border-radius: 6px; padding: 8px; background: #fff; transition: box-shadow .2s; }
+.tl-item { border: 1px solid var(--bg-3); border-radius: 6px; padding: 8px; background: var(--bg-1); transition: box-shadow .2s; }
 .tl-item:hover { box-shadow: var(--shadow-md); }
-.tl-item.critical { border-color: #f53f3f; }
+.tl-item.critical { border-color: var(--color-danger); }
 .tl-item.high { border-color: #f78989; }
-.tl-item.medium { border-color: #ff7d00; }
-.tl-thumb { width: 100%; height: 90px; overflow: hidden; border-radius: 4px; margin-bottom: 6px; background: #f7f8fa; }
+.tl-item.medium { border-color: var(--color-warning); }
+.tl-thumb { width: 100%; height: 90px; overflow: hidden; border-radius: 4px; margin-bottom: 6px; background: var(--bg-2); }
 .tl-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .tl-content { font-size: 12px; }
 .tl-head { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
-.tl-cam { color: #4e5969; font-weight: 500; }
-.tl-time { margin-left: auto; color: #86909c; font-size: 11px; }
-.tl-metrics { display: flex; flex-wrap: wrap; gap: 6px; color: #4e5969; margin-bottom: 4px; }
-.danger-text { color: #f53f3f; font-weight: 500; }
-.m-pipeline { color: #c9cdd4; }
+.tl-cam { color: var(--text-2); font-weight: 500; }
+.tl-time { margin-left: auto; color: var(--text-3); font-size: 11px; }
+.tl-metrics { display: flex; flex-wrap: wrap; gap: 6px; color: var(--text-2); margin-bottom: 4px; }
+.danger-text { color: var(--color-danger); font-weight: 500; }
+.m-pipeline { color: var(--text-4); }
 .tl-alarms { display: flex; flex-wrap: wrap; gap: 4px; }
 .alarm-tag { font-size: 10px; }
 </style>

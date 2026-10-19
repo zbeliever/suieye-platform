@@ -1,81 +1,66 @@
 <template>
-  <div class="tailings-page" v-loading="loading">
-    <!-- ====== 设备头 ====== -->
-    <BackToFactory class="page-back" />
-    <section class="equip-strip">
-      <div class="eq-main">
-        <div class="eq-title">
-          <!-- ★ 标题 = 「设备名 · 功能名」组合式，与 Workbench 的「浮选 · 分析工作台」同构：
-               设备名是这页的主体（浓密机），功能名让导航与页面标题对得上号 -->
-          <span class="eq-name">{{ eq.name || '尾矿浓密机' }}</span>
-          <span class="eq-page-tag">尾矿处理</span>
-          <span class="cond-badge" :class="condition.level">{{ condition.label || '—' }}</span>
-        </div>
-        <div class="eq-meta">
-          <span class="eq-item">{{ eq.spec }}</span>
-          <span class="eq-sep">|</span>
-          <span class="eq-item">进料：{{ eq.feed_from }}</span>
-          <span class="eq-sep">|</span>
-          <span class="eq-item">出料：{{ (eq.outputs || []).join('　·　') }}</span>
-        </div>
-      </div>
-      <div class="eq-side">
-        <div class="eq-cond-desc">{{ condition.desc }}</div>
-        <div class="eq-fresh">
-          数据截止 <b>{{ tsText }}</b>
-          <span class="fresh-age">（{{ freshness.age_hours ?? '—' }} h 前）</span>
-        </div>
-      </div>
-    </section>
+  <PageShell
+    v-loading="loading"
+    :title="`${eq.name || '尾矿浓密机'} · 尾矿处理`"
+    :sub="`${eq.spec || ''} · 进料：${eq.feed_from || '—'}`"
+    kpi="none"
+  >
+    <template #meta>
+      <span class="cond-badge" :class="condition.level">{{ condition.label || '—' }}</span>
+      <span class="eq-cond-desc">{{ condition.desc }}</span>
+    </template>
+    <template #actions>
+      <span class="eq-fresh">
+        数据截止 <b>{{ tsText }}</b>
+        <span class="fresh-age">（{{ freshness.age_hours ?? '—' }} h 前）</span>
+      </span>
+    </template>
 
-    <!-- ====== KPI 统计带 ====== -->
-    <section class="kpi-strip">
-      <div class="kpi-cell">
-        <div class="kpi-num" :class="lvlOf('underflow_conc')">
-          {{ valOf('underflow_conc') }}<span class="kpi-unit">{{ unitOf('underflow_conc') }}</span>
-        </div>
-        <div class="kpi-label">底流浓度</div>
-        <div class="kpi-sub">{{ rangeText('underflow_conc') }}</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num" :class="lvlOf('bed_height')">
-          {{ valOf('bed_height') }}<span class="kpi-unit">{{ unitOf('bed_height') }}</span>
-        </div>
-        <div class="kpi-label">泥床高度</div>
-        <div class="kpi-sub">目标 5.0 · 上限 {{ hiText('bed_height') }}</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num" :class="lvlOf('rake_torque')">
-          {{ valOf('rake_torque') }}<span class="kpi-unit">{{ unitOf('rake_torque') }}</span>
-        </div>
-        <div class="kpi-label">耙架扭矩</div>
-        <div class="kpi-sub">报警 {{ hiText('rake_torque') }}</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num" :class="lvlOf('flocculant_dosage')">
-          {{ valOf('flocculant_dosage') }}<span class="kpi-unit">{{ unitOf('flocculant_dosage') }}</span>
-        </div>
-        <div class="kpi-label">絮凝剂单耗</div>
-        <div class="kpi-sub">超投报警 {{ hiText('flocculant_dosage') }}</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num" :class="balance.ok ? 'ok' : 'danger'">
-          {{ balance.residual_pct ?? '—' }}<span class="kpi-unit">%</span>
-        </div>
-        <div class="kpi-label">物料平衡残差</div>
-        <div class="kpi-sub">{{ balance.ok ? '自洽（< 2%）' : '偏离，需核查计量' }}</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num" :class="lvClass(overflow.turbidity_level)">
-          {{ fmt(overflow.turbidity, 1) }}<span class="kpi-unit">NTU</span>
-        </div>
-        <div class="kpi-label">溢流浊度 · 水质 W3</div>
-        <div class="kpi-sub">
-          SS {{ fmt(overflow.ss, 0) }} mg/L ·
-          <span :class="lvClass(overflow.ss_level)">{{ levelCn(overflow.ss_level) }}</span>
-        </div>
-      </div>
-    </section>
+    <!-- KPI 带：6 个核心工艺量（组件统一为 StatCard；格数是业务量决定的，见文件头注释） -->
+    <div class="kpi-grid">
+        <StatCard
+          label="底流浓度"
+          :value="valOf('underflow_conc')"
+          :unit="unitOf('underflow_conc')"
+          :foot="rangeText('underflow_conc')"
+          :tone="toneOf('underflow_conc')"
+        />
+        <StatCard
+          label="泥床高度"
+          :value="valOf('bed_height')"
+          :unit="unitOf('bed_height')"
+          :foot="`目标 5.0 · 上限 ${hiText('bed_height')}`"
+          :tone="toneOf('bed_height')"
+        />
+        <StatCard
+          label="耙架扭矩"
+          :value="valOf('rake_torque')"
+          :unit="unitOf('rake_torque')"
+          :foot="`报警 ${hiText('rake_torque')}`"
+          :tone="toneOf('rake_torque')"
+        />
+        <StatCard
+          label="絮凝剂单耗"
+          :value="valOf('flocculant_dosage')"
+          :unit="unitOf('flocculant_dosage')"
+          :foot="`超投报警 ${hiText('flocculant_dosage')}`"
+          :tone="toneOf('flocculant_dosage')"
+        />
+        <StatCard
+          label="物料平衡残差"
+          :value="balance.residual_pct ?? '—'"
+          unit="%"
+          :foot="balance.ok ? '自洽（< 2%）' : '偏离，需核查计量'"
+          :tone="balance.ok ? 'default' : 'danger'"
+        />
+        <StatCard
+          label="溢流浊度 · 水质 W3"
+          :value="fmt(overflow.turbidity, 1)"
+          unit="NTU"
+          :foot="`SS ${fmt(overflow.ss, 0)} mg/L · ${levelCn(overflow.ss_level)}`"
+          :tone="overflowTone"
+        />
+    </div>
 
     <!-- ====== 趋势 + 实时参数总表 ====== -->
     <section class="dual-row wide-left">
@@ -447,14 +432,15 @@
         <div v-if="events.length === 0" class="chart-empty">暂无工况事件</div>
       </div>
     </section>
-  </div>
+  </PageShell>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 const loading = ref(true)
 
@@ -552,6 +538,17 @@ const lvlOf = (k) => {
   if (!m) return ''
   return m.level === 'normal' ? 'ok' : m.level
 }
+
+// ★ StatCard 的 tone 只表达状态：正常一律中性（default），越限才着色。
+//   整治前这里是给"正常"上绿色 —— 满屏绿数字会让真正的异常失去对比。
+const toneOf = (k) => {
+  const l = lvlOf(k)
+  return l === 'warning' ? 'warning' : l === 'danger' ? 'danger' : 'default'
+}
+const overflowTone = computed(() => {
+  const l = overflow.value?.turbidity_level
+  return l === 'warning' ? 'warning' : l === 'danger' ? 'danger' : 'default'
+})
 const hiText = (k) => {
   const m = metrics.value[k]
   if (!m) return '—'
@@ -731,7 +728,7 @@ function renderTrend() {
   const times = (series[0].points || []).map((p) => fmtTs(p.ts))
   const yAxis = []
   const sers = []
-  const colors = [cssVar('--chart-1', '#165dff'), cssVar('--chart-2', '#86909c')]
+  const colors = [cssVar('--chart-1', 'var(--color-primary)'), cssVar('--chart-2', 'var(--text-3)')]
 
   series.forEach((s, i) => {
     yAxis.push({
@@ -739,20 +736,20 @@ function renderTrend() {
       scale: true,
       position: i === 0 ? 'left' : 'right',
       // 轴名改挂到图例（避免与右上角图例重叠）
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-      splitLine: i === 0 ? { lineStyle: { color: cssVar('--border-2', '#f2f3f5') } } : { show: false },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+      splitLine: i === 0 ? { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } } : { show: false },
     })
 
     const markLines = []
     if (i === 0) {
       if (s.warn_hi !== null && s.warn_hi !== undefined)
-        markLines.push({ yAxis: s.warn_hi, label: { formatter: `预警 ${s.warn_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', '#ff7d00'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.warn_hi, label: { formatter: `预警 ${s.warn_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed', width: 1 } })
       if (s.warn_lo !== null && s.warn_lo !== undefined)
-        markLines.push({ yAxis: s.warn_lo, label: { formatter: `预警 ${s.warn_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', '#ff7d00'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.warn_lo, label: { formatter: `预警 ${s.warn_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed', width: 1 } })
       if (s.danger_hi !== null && s.danger_hi !== undefined)
-        markLines.push({ yAxis: s.danger_hi, label: { formatter: `危险 ${s.danger_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', '#f53f3f'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.danger_hi, label: { formatter: `危险 ${s.danger_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', 'var(--color-danger)'), type: 'dashed', width: 1 } })
       if (s.danger_lo !== null && s.danger_lo !== undefined)
-        markLines.push({ yAxis: s.danger_lo, label: { formatter: `危险 ${s.danger_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', '#f53f3f'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.danger_lo, label: { formatter: `危险 ${s.danger_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', 'var(--color-danger)'), type: 'dashed', width: 1 } })
     }
 
     sers.push({
@@ -772,14 +769,14 @@ function renderTrend() {
   trendChart.setOption(
     {
       tooltip: { trigger: 'axis' },
-      legend: { show: series.length > 1, top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', '#86909c') } },
+      legend: { show: series.length > 1, top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') } },
       grid: { top: series.length > 1 ? 30 : 26, right: series.length > 1 ? 56 : 46, bottom: 30, left: 54 },
       xAxis: {
         type: 'category',
         data: times,
         boundaryGap: false,
-        axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c'), hideOverlap: true },
-        axisLine: { lineStyle: { color: cssVar('--border-1', '#e5e6eb') } },
+        axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
+        axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
       },
       yAxis,
       series: sers,
@@ -796,22 +793,22 @@ function renderTrack() {
   trackChart.setOption(
     {
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', '#86909c') } },
+      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') } },
       grid: { top: 30, right: 20, bottom: 28, left: 48 },
       xAxis: {
         type: 'category',
         data: times,
         boundaryGap: false,
-        axisLabel: { fontSize: 10, color: cssVar('--text-3', '#86909c'), hideOverlap: true },
-        axisLine: { lineStyle: { color: cssVar('--border-1', '#e5e6eb') } },
+        axisLabel: { fontSize: 10, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
+        axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
       },
       yAxis: {
         type: 'value',
         scale: true,
         name: '%',
-        nameTextStyle: { fontSize: 10, color: cssVar('--text-3', '#86909c') },
-        axisLabel: { fontSize: 10, color: cssVar('--text-3', '#86909c') },
-        splitLine: { lineStyle: { color: cssVar('--border-2', '#f2f3f5') } },
+        nameTextStyle: { fontSize: 10, color: cssVar('--text-3', 'var(--text-3)') },
+        axisLabel: { fontSize: 10, color: cssVar('--text-3', 'var(--text-3)') },
+        splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
       },
       series: [
         {
@@ -820,8 +817,8 @@ function renderTrack() {
           smooth: true,
           showSymbol: false,
           data: track.map((p) => p.actual),
-          lineStyle: { width: 2, color: cssVar('--chart-1', '#165dff') },
-          itemStyle: { color: cssVar('--chart-1', '#165dff') },
+          lineStyle: { width: 2, color: cssVar('--chart-1', 'var(--color-primary)') },
+          itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)') },
         },
         {
           name: '模型预测',
@@ -829,8 +826,8 @@ function renderTrack() {
           smooth: true,
           showSymbol: false,
           data: track.map((p) => p.predicted),
-          lineStyle: { width: 1.5, color: cssVar('--color-warning', '#ff7d00'), type: 'dashed' },
-          itemStyle: { color: cssVar('--color-warning', '#ff7d00') },
+          lineStyle: { width: 1.5, color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed' },
+          itemStyle: { color: cssVar('--color-warning', 'var(--color-warning)') },
         },
       ],
     },
@@ -849,22 +846,22 @@ function renderForecast() {
   fcChart.setOption(
     {
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', '#86909c') } },
+      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') } },
       grid: { top: 30, right: 46, bottom: 30, left: 54 },
       xAxis: {
         type: 'category',
         data: times,
         boundaryGap: false,
-        axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c'), hideOverlap: true },
-        axisLine: { lineStyle: { color: cssVar('--border-1', '#e5e6eb') } },
+        axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
+        axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
       },
       yAxis: {
         type: 'value',
         scale: true,
         name: unit,
-        nameTextStyle: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-        axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-        splitLine: { lineStyle: { color: cssVar('--border-2', '#f2f3f5') } },
+        nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+        axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+        splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
       },
       series: [
         {
@@ -873,8 +870,8 @@ function renderForecast() {
           smooth: true,
           showSymbol: false,
           data: fc.baseline.map((p) => p[key]),
-          lineStyle: { width: 2, color: cssVar('--color-warning', '#ff7d00'), type: 'dashed' },
-          itemStyle: { color: cssVar('--color-warning', '#ff7d00') },
+          lineStyle: { width: 2, color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed' },
+          itemStyle: { color: cssVar('--color-warning', 'var(--color-warning)') },
         },
         {
           name: '采纳推荐',
@@ -882,8 +879,8 @@ function renderForecast() {
           smooth: true,
           showSymbol: false,
           data: fc.recommended.map((p) => p[key]),
-          lineStyle: { width: 2, color: cssVar('--chart-1', '#165dff') },
-          itemStyle: { color: cssVar('--chart-1', '#165dff') },
+          lineStyle: { width: 2, color: cssVar('--chart-1', 'var(--color-primary)') },
+          itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)') },
           areaStyle: { color: cssVar('--chart-1-bg', '#e8f3ff'), opacity: 0.4 },
         },
       ],
@@ -1045,6 +1042,13 @@ onUnmounted(() => {
 .kpi-sub .warning { color: var(--color-warning); }
 .kpi-sub .danger { color: var(--color-danger); }
 
+/* KPI 网格：6 格（StatCard 本体统一，格数由业务量决定） */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
 /* ====== 布局 ====== */
 .dual-row {
   display: grid;
@@ -1061,8 +1065,8 @@ onUnmounted(() => {
 .panel {
   background: var(--bg-1);
   border: 1px solid var(--border-1);
-  border-radius: var(--radius);
-  padding: 14px 16px;
+  border-radius: var(--panel-radius);
+  padding: var(--panel-pad-y) var(--panel-pad-x);
   min-width: 0;
 }
 .panel-head {
@@ -1566,7 +1570,7 @@ onUnmounted(() => {
 
 /* ====== 响应式 ====== */
 @media (max-width: 1500px) {
-  .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+  .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi-cell:nth-child(3n) { border-right: none; }
   .dual-row.wide-left { grid-template-columns: 1.2fr 1fr; }
   .tri-row { grid-template-columns: 1.3fr 1fr 1fr; }
@@ -1575,7 +1579,7 @@ onUnmounted(() => {
   .dual-row, .dual-row.wide-left, .tri-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 900px) {
-  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .model-metrics { grid-template-columns: repeat(2, 1fr); }
   .sp-grid { grid-template-columns: 1fr; }
   .sav-grid { grid-template-columns: 1fr 1fr; }

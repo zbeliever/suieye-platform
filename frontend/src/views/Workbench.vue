@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, VideoPlay } from '@element-plus/icons-vue'
 import FrothLive from '../components/FrothLive.vue'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
 import api from '../api'
 
 const route = useRoute()
@@ -334,12 +334,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <!-- ★ 统一返回入口：原来这里用 el-page-header 自带的回退箭头，
-         与其它 10 个页面的「← 智能工厂」长得不一样。全站只保留一种返回样式。 -->
-    <BackToFactory class="page-back" />
-    <div class="wb-head">
-      <span class="page-title">{{ sceneInfo?.display_name || cfg.name }} · 分析工作台</span>
+  <PageShell
+    :title="`${sceneInfo?.display_name || cfg.name} · 分析工作台`"
+    sub="上传图像或抓取实时帧，跑完整分析管线"
+    kpi="none"
+  >
+    <template #actions>
       <el-tag v-if="sceneInfo?.active_model" type="success" effect="dark" size="small">
         模型 {{ sceneInfo.active_model }}
       </el-tag>
@@ -349,11 +349,10 @@ onMounted(async () => {
         v-if="result?.prediction?.condition && sceneId === 'grinding'"
         :type="result.prediction.condition === '正常' ? 'success' : result.prediction.condition === '过磨' ? 'warning' : 'danger'"
         size="small"
-        style="margin-left: 6px"
       >
         {{ result.prediction.condition }}
       </el-tag>
-    </div>
+    </template>
 
     <div class="workbench">
       <!-- 左列：实时画面 + 上传 -->
@@ -391,7 +390,7 @@ onMounted(async () => {
         >
           <img v-if="localPreview" :src="localPreview" class="preview" alt="待分析图像" />
           <template v-else>
-            <el-icon :size="42" color="#86909c"><UploadFilled /></el-icon>
+            <el-icon :size="42" color="var(--text-3)"><UploadFilled /></el-icon>
             <div class="drop-text">{{ cfg.uploadText }}</div>
             <div class="drop-sub">或点击下方按钮选择文件</div>
           </template>
@@ -562,32 +561,16 @@ onMounted(async () => {
         </el-table-column>
       </el-table>
     </div>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.page {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding-bottom: 40px;
-}
-.page-title {
-  font-size: 16px;
-  font-weight: 500;
-}
-/* 页头：返回按钮独占一行，场景名 + 模型标签并排在下面一行（原 el-page-header 版式） */
-.page-back { margin-bottom: 12px; }
-.wb-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+/* 页头/留白/返回入口由 PageShell 提供（2026-10-19 一致性整治） */
 .workbench {
   display: grid;
   grid-template-columns: 380px 1fr;
   gap: 16px;
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 /* 上传列 */
@@ -599,14 +582,14 @@ onMounted(async () => {
   margin-bottom: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--text-1);
 }
 .col-title::before {
   content: '';
   width: 3px;
   height: 12px;
   border-radius: 2px;
-  background: #165dff;
+  background: var(--color-primary);
 }
 .froth-block { margin-bottom: 10px; }
 /* 实时画面下的主按钮：抓当前帧 → 走全链路分析（这一颗把"播放器"接进了分析链路） */
@@ -620,32 +603,32 @@ onMounted(async () => {
   gap: 8px;
   margin: 2px 0 10px;
   font-size: 11px;
-  color: #86909c;
+  color: var(--text-3);
 }
 .col-sep::before,
 .col-sep::after {
   content: '';
   flex: 1;
   height: 1px;
-  background: #e5e6eb;
+  background: var(--border-1);
 }
 /* 浮选场景左列多了实时画面 → 上传区收矮一点，整页不至于太长 */
 .drop-zone.compact { height: 216px; }
 
 .drop-zone {
-  border: 1.5px dashed #c9cdd4;
+  border: 1.5px dashed var(--text-4);
   border-radius: 6px;
   height: 300px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
+  background: var(--bg-1);
   transition: all 0.2s;
   overflow: hidden;
 }
 .drop-zone.dragging {
-  border-color: #165dff;
+  border-color: var(--color-primary);
   background: #ecf5ff;
 }
 .preview {
@@ -655,12 +638,12 @@ onMounted(async () => {
 }
 .drop-text {
   margin-top: 10px;
-  color: #4e5969;
+  color: var(--text-2);
   font-size: 14px;
 }
 .drop-sub {
   margin-top: 4px;
-  color: #86909c;
+  color: var(--text-3);
   font-size: 12px;
 }
 .upload-actions {
@@ -671,28 +654,28 @@ onMounted(async () => {
 .file-meta {
   margin-top: 8px;
   font-size: 12px;
-  color: #86909c;
+  color: var(--text-3);
   word-break: break-all;
 }
 
 /* 轨迹卡 */
 .trace-card {
   margin-top: 16px;
-  background: #fff;
+  background: var(--bg-1);
   border-radius: 6px;
   padding: 14px;
-  border: 1px solid #f2f3f5;
+  border: 1px solid var(--bg-3);
 }
 .card-title {
   font-size: 13px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--text-1);
   margin-bottom: 10px;
   display: flex;
   justify-content: space-between;
 }
 .card-title .total {
-  color: #165dff;
+  color: var(--color-primary);
   font-weight: 500;
 }
 .trace-row {
@@ -704,7 +687,7 @@ onMounted(async () => {
   font-size: 12px;
 }
 .trace-name {
-  color: #4e5969;
+  color: var(--text-2);
   font-family: Consolas, monospace;
 }
 .trace-bar-wrap {
@@ -715,11 +698,11 @@ onMounted(async () => {
 }
 .trace-bar {
   height: 100%;
-  background: linear-gradient(90deg, #165dff, #67c23a);
+  background: linear-gradient(90deg, var(--color-primary), #67c23a);
   border-radius: 4px;
 }
 .trace-ms {
-  color: #86909c;
+  color: var(--text-3);
   text-align: right;
   font-family: Consolas, monospace;
 }
@@ -729,18 +712,18 @@ onMounted(async () => {
   min-height: 400px;
 }
 .loading-box {
-  background: #fff;
+  background: var(--bg-1);
   border-radius: 6px;
   padding: 24px;
   min-height: 400px;
-  border: 1px solid #f2f3f5;
+  border: 1px solid var(--bg-3);
 }
 
 /* 预测卡 */
 .pred-card {
   display: flex;
-  background: #fff;
-  border: 1px solid #f2f3f5;
+  background: var(--bg-1);
+  border: 1px solid var(--bg-3);
   border-radius: 6px;
   padding: 18px;
   margin-bottom: 14px;
@@ -751,24 +734,24 @@ onMounted(async () => {
 }
 .pred-label {
   font-size: 13px;
-  color: #86909c;
+  color: var(--text-3);
 }
 .pred-value {
   font-size: 44px;
   font-weight: 700;
-  color: #1d2129;
+  color: var(--text-1);
   line-height: 1.2;
   font-family: 'DIN Alternate', Consolas, monospace;
 }
 .pred-value .unit {
   font-size: 18px;
-  color: #86909c;
+  color: var(--text-3);
   margin-left: 4px;
 }
 .pred-model {
   margin-top: 4px;
   font-size: 12px;
-  color: #86909c;
+  color: var(--text-3);
 }
 .pred-confidence {
   margin-top: 2px;
@@ -791,14 +774,14 @@ onMounted(async () => {
 .dosing-link {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed #e5e6eb;
+  border-top: 1px dashed var(--border-1);
   display: flex;
   align-items: center;
   gap: 10px;
 }
 .dosing-hint {
   font-size: 12px;
-  color: #86909c;
+  color: var(--text-3);
 }
 
 .pred-side {
@@ -812,25 +795,25 @@ onMounted(async () => {
 .side-num {
   font-size: 20px;
   font-weight: 600;
-  color: #165dff;
+  color: var(--color-primary);
 }
 .side-label {
   font-size: 11px;
-  color: #86909c;
+  color: var(--text-3);
   margin-top: 2px;
 }
 
 /* 图像 */
 .image-tabs {
-  background: #fff;
-  border: 1px solid #f2f3f5;
+  background: var(--bg-1);
+  border: 1px solid var(--bg-3);
   border-bottom: none;
   border-radius: 8px 8px 0 0;
   padding: 0 12px;
 }
 .image-box {
-  background: #fff;
-  border: 1px solid #f2f3f5;
+  background: var(--bg-1);
+  border: 1px solid var(--bg-3);
   border-radius: 0 0 8px 8px;
   height: 380px;
   display: flex;
@@ -846,8 +829,8 @@ onMounted(async () => {
 
 /* 特征 */
 .features-card {
-  background: #fff;
-  border: 1px solid #f2f3f5;
+  background: var(--bg-1);
+  border: 1px solid var(--bg-3);
   border-radius: 6px;
   padding: 14px;
 }
@@ -858,7 +841,7 @@ onMounted(async () => {
 }
 .group-label {
   font-size: 12px;
-  color: #165dff;
+  color: var(--color-primary);
   font-weight: 600;
   margin-bottom: 6px;
 }
@@ -873,26 +856,26 @@ onMounted(async () => {
   font-size: 12px;
   padding: 3px 6px;
   border-radius: 4px;
-  background: #ffffff;
+  background: var(--bg-1);
 }
 .f-name {
-  color: #4e5969;
+  color: var(--text-2);
 }
 .f-value {
-  color: #1d2129;
+  color: var(--text-1);
   font-family: Consolas, monospace;
   font-weight: 600;
 }
 .f-value small {
-  color: #c9cdd4;
+  color: var(--text-4);
   font-weight: 400;
 }
 
 /* 最近记录 */
 .recent-card {
   margin-top: 16px;
-  background: #fff;
-  border: 1px solid #f2f3f5;
+  background: var(--bg-1);
+  border: 1px solid var(--bg-3);
   border-radius: 6px;
   padding: 14px;
 }
@@ -906,7 +889,7 @@ onMounted(async () => {
   border-radius: 4px;
   display: block;
   cursor: zoom-in;
-  background: #f7f8fa;
+  background: var(--bg-2);
 }
-.dim { color: #c9cdd4; }
+.dim { color: var(--text-4); }
 </style>

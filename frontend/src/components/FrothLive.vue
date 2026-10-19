@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: 8px;
   background: #0f1419;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--border-1);
 }
 .fl-video {
   display: block;
@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
   padding: 3px 8px;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: var(--bg-1);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -167,7 +167,7 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f53f3f;
+  background: var(--color-danger);
   animation: fl-breath 1.6s ease-in-out infinite;
 }
 @keyframes fl-breath {
@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
   padding: 3px 8px;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  color: var(--bg-1);
   font-size: 11px;
   font-family: ui-monospace, Menlo, Consolas, monospace;
 }
@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 18px 8px 6px;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.62));
-  color: #fff;
+  color: var(--bg-1);
   font-size: 11px;
 }
 .fl-label { font-weight: 600; }

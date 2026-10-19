@@ -10,7 +10,8 @@ import {
 } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -317,19 +318,19 @@ function renderTrendChart() {
       grid: { top: 10, right: 10, bottom: 22, left: 40 },
       xAxis: {
         type: 'category', data: dates,
-        axisLabel: { fontSize: 9, color: '#86909c', rotate: 30 },
-        axisLine: { lineStyle: { color: '#e5e6eb' } }, axisTick: { show: false },
+        axisLabel: { fontSize: 9, color: 'var(--text-3)', rotate: 30 },
+        axisLine: { lineStyle: { color: 'var(--border-1)' } }, axisTick: { show: false },
       },
       yAxis: {
         type: 'value', name: 'P80(μm)',
-        nameTextStyle: { fontSize: 10, color: '#86909c' },
-        splitLine: { lineStyle: { color: '#f2f3f5' } },
-        axisLabel: { fontSize: 9, color: '#86909c' }, axisLine: { show: false },
+        nameTextStyle: { fontSize: 10, color: 'var(--text-3)' },
+        splitLine: { lineStyle: { color: 'var(--bg-3)' } },
+        axisLabel: { fontSize: 9, color: 'var(--text-3)' }, axisLine: { show: false },
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: '#fff', borderColor: '#e5e6eb',
-        textStyle: { color: '#1d2129', fontSize: 11 },
+        backgroundColor: 'var(--bg-1)', borderColor: 'var(--border-1)',
+        textStyle: { color: 'var(--text-1)', fontSize: 11 },
         extraCssText: 'box-shadow: var(--shadow-md);',
       },
       series: [{
@@ -364,23 +365,23 @@ function renderTrendChart() {
     xAxis: {
       type: 'category',
       data: dates,
-      axisLabel: { fontSize: 9, color: '#86909c', rotate: 30 },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      axisLabel: { fontSize: 9, color: 'var(--text-3)', rotate: 30 },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
       name: 'Pb%',
-      nameTextStyle: { fontSize: 10, color: '#86909c' },
-      splitLine: { lineStyle: { color: '#f2f3f5' } },
-      axisLabel: { fontSize: 9, color: '#86909c' },
+      nameTextStyle: { fontSize: 10, color: 'var(--text-3)' },
+      splitLine: { lineStyle: { color: 'var(--bg-3)' } },
+      axisLabel: { fontSize: 9, color: 'var(--text-3)' },
       axisLine: { show: false },
     },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#fff',
-      borderColor: '#e5e6eb',
-      textStyle: { color: '#1d2129', fontSize: 11 },
+      backgroundColor: 'var(--bg-1)',
+      borderColor: 'var(--border-1)',
+      textStyle: { color: 'var(--text-1)', fontSize: 11 },
       extraCssText: 'box-shadow: var(--shadow-md);',
     },
     series: [{
@@ -389,8 +390,8 @@ function renderTrendChart() {
       smooth: true,
       symbol: 'circle',
       symbolSize: 5,
-      lineStyle: { color: '#165dff', width: 2 },
-      itemStyle: { color: '#165dff' },
+      lineStyle: { color: 'var(--color-primary)', width: 2 },
+      itemStyle: { color: 'var(--color-primary)' },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(22,93,255,0.15)' },
@@ -410,18 +411,38 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="tm-page">
-    <!-- ====== 头部 ====== -->
-    <BackToFactory class="page-back" />
-    <div class="tm-header">
-      <div class="tm-title-row">
-        
-        <div>
-          <h2>时光机</h2>
-          <p class="tm-subtitle">{{ isGrinding ? '回溯粒度分析记录，对比相似工况，洞察磨矿产品细度变化规律' : '回溯历史分析记录，对比相似工况，洞察品位波动规律' }}</p>
-        </div>
-      </div>
-    </div>
+  <PageShell
+    title="时光机"
+    :sub="isGrinding
+      ? '回溯粒度分析记录，对比相似工况，洞察磨矿产品细度变化规律'
+      : '回溯历史分析记录，对比相似工况，洞察品位波动规律'"
+  >
+    <!-- 四格摘要：原来 5 张卡（平均/最高/最低/异常/正常），
+         按"固定 4 格"并进 4 格 —— 正常条数不丢，落到第 4 格的副行。 -->
+    <template #kpi v-if="summary">
+      <template v-if="isGrinding">
+        <StatCard label="平均 P80" :value="summary.avg" unit="μm" tone="primary" />
+        <StatCard label="最粗（P80max）" :value="summary.max" unit="μm" />
+        <StatCard label="最细（P80min）" :value="summary.min" unit="μm" />
+        <StatCard
+          label="过磨条数"
+          :value="summary.lowCount"
+          tone="warning"
+          :foot="`正常 ${summary.normalCount} 条`"
+        />
+      </template>
+      <template v-else>
+        <StatCard label="平均铅品位" :value="summary.avg" unit="%" tone="primary" />
+        <StatCard label="最高值" :value="summary.max" unit="%" />
+        <StatCard label="最低值" :value="summary.min" unit="%" />
+        <StatCard
+          label="偏低条数（<4%）"
+          :value="summary.lowCount"
+          tone="danger"
+          :foot="`正常区间 ${summary.normalCount} 条`"
+        />
+      </template>
+    </template>
 
     <!-- ====== 筛选栏 ====== -->
     <div class="filter-bar">
@@ -455,87 +476,6 @@ onMounted(() => {
       <el-icon class="stale-ico"><InfoFilled /></el-icon>
       <span class="stale-text">{{ staleTip }}</span>
       <el-button type="primary" size="small" link @click="goAnalyze">去分析一次 →</el-button>
-    </div>
-
-    <!-- ====== 摘要卡片区（场景自适应） ====== -->
-    <div v-if="summary" class="summary-row">
-      <!-- 磨矿场景摘要 -->
-      <template v-if="isGrinding">
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#e8f3ff;color:#165dff;"><el-icon><component :is="Coin" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.avg }}<span class="sc-unit">μm</span></div>
-            <div class="sc-label">平均 P80</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#fff7e8;color:#ff7d00;"><el-icon><component :is="ArrowUp" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.max }}<span class="sc-unit">μm</span></div>
-            <div class="sc-label">最粗 (P80max)</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#e8ffef;color:#00b42a;"><el-icon><component :is="ArrowDown" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.min }}<span class="sc-unit">μm</span></div>
-            <div class="sc-label">最细 (P80min)</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#fff0f0;color:#f53f3f;"><el-icon><component :is="WarningFilled" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.lowCount }}</div>
-            <div class="sc-label">过磨条数</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#f0f5ff;color:#165dff;"><el-icon><component :is="CircleCheck" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.normalCount }}</div>
-            <div class="sc-label">正常条数</div>
-          </div>
-        </div>
-      </template>
-
-      <!-- 浮选场景摘要（原有） -->
-      <template v-else>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#e8f3ff;color:#165dff;"><el-icon><component :is="TrendCharts" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.avg }}<span class="sc-unit">%</span></div>
-            <div class="sc-label">平均铅品位</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#e8ffef;color:#00b42a;"><el-icon><component :is="ArrowUp" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.max }}<span class="sc-unit">%</span></div>
-            <div class="sc-label">最高值</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#fff7e8;color:#ff7d00;"><el-icon><component :is="ArrowDown" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.min }}<span class="sc-unit">%</span></div>
-            <div class="sc-label">最低值</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#fff0f0;color:#f53f3f;"><el-icon><component :is="WarningFilled" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.lowCount }}</div>
-            <div class="sc-label">偏低条数 (&lt;4%)</div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <div class="sc-icon" style="background:#f0f5ff;color:#165dff;"><el-icon><component :is="CircleCheck" /></el-icon></div>
-          <div class="sc-body">
-            <div class="sc-value">{{ summary.normalCount }}</div>
-            <div class="sc-label">正常区间 (4-7%)</div>
-          </div>
-        </div>
-      </template>
     </div>
 
     <!-- ====== 主体：左侧网格 + 右侧趋势图 ====== -->
@@ -747,43 +687,29 @@ onMounted(() => {
         <pre class="json-block">{{ JSON.stringify(currentRecord.prediction, null, 2) }}</pre>
       </div>
     </ElDialog>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.tm-page { max-width: 1280px; margin: 0 auto; padding: 20px 24px; box-sizing: border-box; }
-
-/* ---- 头部 ---- */
-.tm-header { margin-bottom: 20px; }
-.tm-title-row { display: flex; align-items: center; gap: 14px; }
-.tm-title-icon { font-size: 32px; }
-.tm-header h2 { font-size: 22px; font-weight: 700; color: #1d2129; margin: 0 0 4px; }
-.tm-subtitle { color: #86909c; font-size: 13px; margin: 0; }
+/* 页头/留白/返回入口由 PageShell 提供（2026-10-19 一致性整治） */
 
 /* ---- 筛选栏 ---- */
-.filter-bar { background: #fff; border-radius: 8px; padding: 14px 20px; margin-bottom: 18px; box-shadow: var(--shadow-sm); }
+.filter-bar { background: var(--bg-1); border-radius: 8px; padding: 14px 20px; margin-bottom: 18px; box-shadow: var(--shadow-sm); }
 .filter-form { margin-bottom: -6px; }
-.count-badge { color: #86909c; font-size: 13px; margin-left: 12px; }
-.count-badge strong { color: #165dff; font-size: 16px; }
+.count-badge { color: var(--text-3); font-size: 13px; margin-left: 12px; }
+.count-badge strong { color: var(--color-primary); font-size: 16px; }
 
 /* ---- 数据新鲜度提示条 ---- */
 .stale-tip {
   display: flex; align-items: center; gap: 8px;
   background: #e8f3ff; border: 1px solid #bedaff; border-radius: 8px;
   padding: 10px 14px; margin: -6px 0 18px;
-  font-size: 13px; color: #1d2129;
+  font-size: 13px; color: var(--text-1);
 }
-.stale-ico { color: #165dff; font-size: 15px; flex-shrink: 0; }
+.stale-ico { color: var(--color-primary); font-size: 15px; flex-shrink: 0; }
 .stale-text { flex: 1; min-width: 0; }
 
 /* ---- 摘要卡片 ---- */
-.summary-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
-.summary-card { background: #fff; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 12px; box-shadow: var(--shadow-sm); transition: transform 0.2s; }
-.summary-card:hover { transform: translateY(-2px); }
-.sc-icon { width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
-.sc-value { font-size: 22px; font-weight: 700; color: #1d2129; line-height: 1.2; }
-.sc-unit { font-size: 13px; font-weight: 400; color: #86909c; margin-left: 2px; }
-.sc-label { font-size: 12px; color: #86909c; margin-top: 2px; }
 
 /* ---- 主体布局 ---- */
 .tm-main { display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
@@ -792,96 +718,95 @@ onMounted(() => {
 .tm-grid-section { min-height: 300px; }
 .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
 
-.grid-card { cursor: pointer; border-radius: 8px; overflow: hidden; background: #fff; box-shadow: var(--shadow-md); transition: transform 0.2s, box-shadow 0.2s; }
+.grid-card { cursor: pointer; border-radius: 8px; overflow: hidden; background: var(--bg-1); box-shadow: var(--shadow-md); transition: transform 0.2s, box-shadow 0.2s; }
 .grid-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
 
-.card-thumb-wrap { position: relative; height: 140px; overflow: hidden; background: #f7f8fa; }
+.card-thumb-wrap { position: relative; height: 140px; overflow: hidden; background: var(--bg-2); }
 .card-thumb { width: 100%; height: 100%; }
-.thumb-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #c9cdd4; font-size: 28px; gap: 4px; font-size: 13px; }
+.thumb-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-4); font-size: 28px; gap: 4px; font-size: 13px; }
 .thumb-placeholder span:first-child { font-size: 28px; }
 
-.card-grade-badge { position: absolute; top: 8px; left: 8px; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; backdrop-filter: blur(4px); }
+.card-grade-badge { position: absolute; top: 8px; left: 8px; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; color: var(--bg-1); backdrop-filter: blur(4px); }
 .card-grade-badge.low { background: rgba(245,63,63,0.85); }
 .card-grade-badge.normal { background: rgba(0,180,42,0.85); }
 .card-grade-badge.high { background: rgba(22,93,255,0.85); }
 
-.card-dev-tag { position: absolute; bottom: 8px; right: 8px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; }
+.card-dev-tag { position: absolute; bottom: 8px; right: 8px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--bg-1); }
 .card-dev-tag.good { background: rgba(0,180,42,0.8); }
 .card-dev-tag.warn { background: rgba(255,125,0,0.8); }
 
 /* 磨矿工况标签（卡片角标下方） */
-.card-cond-tag { position: absolute; bottom: 8px; left: 8px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; }
+.card-cond-tag { position: absolute; bottom: 8px; left: 8px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: var(--bg-1); }
 .card-cond-tag.cond-正常 { background: rgba(0,180,42,0.85); }
 .card-cond-tag.cond-过磨 { background: rgba(255,125,0,0.85); }
 .card-cond-tag.cond-欠磨 { background: rgba(245,63,63,0.85); }
 
 /* 详情弹窗中工况文字颜色 */
-.cond-text-正常 { color: #00b42a !important; }
-.cond-text-过磨 { color: #ff7d00 !important; }
-.cond-text-欠磨 { color: #f53f3f !important; }
+.cond-text-正常 { color: var(--color-success) !important; }
+.cond-text-过磨 { color: var(--color-warning) !important; }
+.cond-text-欠磨 { color: var(--color-danger) !important; }
 
 .card-body { padding: 10px 12px; }
-.card-time { font-size: 12px; font-weight: 600; color: #1d2129; }
+.card-time { font-size: 12px; font-weight: 600; color: var(--text-1); }
 .card-meta { display: flex; gap: 12px; margin-top: 4px; }
-.meta-zn, .meta-conf { font-size: 11px; color: #86909c; }
-.card-actual { font-size: 11px; color: #00b42a; margin-top: 4px; }
+.meta-zn, .meta-conf { font-size: 11px; color: var(--text-3); }
+.card-actual { font-size: 11px; color: var(--color-success); margin-top: 4px; }
 
 /* ---- 空状态 ---- */
-.empty-state { text-align: center; padding: 60px 20px; color: #86909c; }
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-3); }
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-state p { margin: 4px 0; font-size: 14px; }
-.empty-hint { font-size: 12px; color: #c9cdd4; }
+.empty-hint { font-size: 12px; color: var(--text-4); }
 
 /* ---- 分页 ---- */
 .pagination-wrap { display: flex; justify-content: center; margin-top: 20px; }
 
 /* ---- 右侧趋势区 ---- */
 .tm-trend-section { position: sticky; top: 20px; }
-.trend-card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: var(--shadow-sm); margin-bottom: 12px; }
-.trend-title { font-size: 14px; font-weight: 600; color: #1d2129; margin: 0 0 12px; }
+.trend-card { background: var(--bg-1); border-radius: 8px; padding: 16px; box-shadow: var(--shadow-sm); margin-bottom: 12px; }
+.trend-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin: 0 0 12px; }
 .trend-chart { height: 200px; }
 
-.quick-stats { background: #fff; border-radius: 8px; padding: 16px; box-shadow: var(--shadow-sm); }
+.quick-stats { background: var(--bg-1); border-radius: 8px; padding: 16px; box-shadow: var(--shadow-sm); }
 .dist-bar { display: flex; border-radius: 6px; overflow: hidden; height: 36px; font-size: 12px; }
-.dist-segment { display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 500; transition: width 0.5s ease; }
-.dist-segment.low { background: #f53f3f; }
-.dist-segment.normal { background: #00b42a; }
-.dist-segment.high { background: #165dff; }
+.dist-segment { display: flex; align-items: center; justify-content: center; color: var(--bg-1); font-weight: 500; transition: width 0.5s ease; }
+.dist-segment.low { background: var(--color-danger); }
+.dist-segment.normal { background: var(--color-success); }
+.dist-segment.high { background: var(--color-primary); }
 
 /* ---- 详情弹窗 ---- */
 .detail-content { max-height: 65vh; overflow-y: auto; }
 
 .detail-hero { display: flex; gap: 20px; margin-bottom: 20px; }
-.hero-image { width: 280px; flex-shrink: 0; border-radius: 8px; overflow: hidden; background: #f7f8fa; }
+.hero-image { width: 280px; flex-shrink: 0; border-radius: 8px; overflow: hidden; background: var(--bg-2); }
 .hero-img { width: 100%; height: 200px; }
 .hero-ph { height: 200px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
 
 .hero-info { flex: 1; }
-.hero-info h3 { margin: 0 0 12px; font-size: 16px; color: #1d2129; }
+.hero-info h3 { margin: 0 0 12px; font-size: 16px; color: var(--text-1); }
 .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
 .info-item { display: flex; flex-direction: column; }
-.info-label { font-size: 11px; color: #86909c; }
-.info-value { font-size: 15px; font-weight: 600; color: #1d2129; }
-.info-value.primary { color: #165dff; font-size: 17px; }
-.info-value.success { color: #00b42a; }
+.info-label { font-size: 11px; color: var(--text-3); }
+.info-value { font-size: 15px; font-weight: 600; color: var(--text-1); }
+.info-value.primary { color: var(--color-primary); font-size: 17px; }
+.info-value.success { color: var(--color-success); }
 .info-value.mono { font-family: 'Menlo', 'Consolas', monospace; font-size: 13px; font-weight: 400; }
 
 /* ---- 对比区 ---- */
-.compare-section { background: #f7f8fa; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-.compare-title { font-size: 14px; font-weight: 600; color: #1d2129; margin: 0 0 14px; }
+.compare-section { background: var(--bg-2); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.compare-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin: 0 0 14px; }
 .compare-grid { display: flex; align-items: center; gap: 16px; }
 .compare-col { flex: 1; }
-.compare-label { font-size: 12px; font-weight: 600; color: #86909c; margin-bottom: 8px; text-align: center; }
-.compare-img { width: 100%; height: 150px; border-radius: 6px; overflow: hidden; background: #f2f3f5; }
-.compare-data { margin-top: 8px; font-size: 12px; color: #4e5969; line-height: 1.8; }
-.compare-vs { font-size: 14px; font-weight: 700; color: #c9cdd4; flex-shrink: 0; }
+.compare-label { font-size: 12px; font-weight: 600; color: var(--text-3); margin-bottom: 8px; text-align: center; }
+.compare-img { width: 100%; height: 150px; border-radius: 6px; overflow: hidden; background: var(--bg-3); }
+.compare-data { margin-top: 8px; font-size: 12px; color: var(--text-2); line-height: 1.8; }
+.compare-vs { font-size: 14px; font-weight: 700; color: var(--text-4); flex-shrink: 0; }
 
-.json-block { background: #f7f8fa; padding: 12px; border-radius: 6px; font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; color: #4e5969; }
+.json-block { background: var(--bg-2); padding: 12px; border-radius: 6px; font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-all; color: var(--text-2); }
 
 /* ---- 响应式 ---- */
 @media (max-width: 900px) {
   .tm-main { grid-template-columns: 1fr; }
-  .summary-row { grid-template-columns: repeat(3, 1fr); }
   .detail-hero { flex-direction: column; }
   .hero-image { width: 100%; }
 }

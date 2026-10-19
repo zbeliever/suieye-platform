@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 // ---- 数据 ----
 const loading = ref(true)
@@ -80,30 +81,30 @@ function renderTrendChart(d) {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#fff',
-      borderColor: '#e5e6eb',
-      textStyle: { color: '#1d2129', fontSize: 12 },
+      backgroundColor: 'var(--bg-1)',
+      borderColor: 'var(--border-1)',
+      textStyle: { color: 'var(--text-1)', fontSize: 12 },
       extraCssText: 'box-shadow: var(--shadow-md);',
     },
     legend: {
       data: ['预测品位', '真实品位', '目标线', '警戒区间'],
       bottom: 0,
-      textStyle: { fontSize: 11, color: '#86909c' },
+      textStyle: { fontSize: 11, color: 'var(--text-3)' },
       itemWidth: 16,
       itemHeight: 3,
     },
     grid: { top: 20, right: 20, bottom: 40, left: 58 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { rotate: 30, fontSize: 11, color: '#86909c' },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      axisLabel: { rotate: 30, fontSize: 11, color: 'var(--text-3)' },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     yAxis: {
       type: 'value', name: '铅品位 (%)', min: 0,
-      nameTextStyle: { color: '#86909c', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#f2f3f5', type: 'dashed' } },
-      axisLabel: { color: '#86909c', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
+      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
+      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     animation: true,
     animationDuration: 1200,
@@ -111,8 +112,8 @@ function renderTrendChart(d) {
     series: [
       {
         name: '预测品位', type: 'line', data: preds, smooth: true,
-        lineStyle: { color: '#165dff', width: 2.5 },
-        itemStyle: { color: '#165dff' },
+        lineStyle: { color: 'var(--color-primary)', width: 2.5 },
+        itemStyle: { color: 'var(--color-primary)' },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(22,93,255,0.2)' },
           { offset: 1, color: 'rgba(22,93,255,0.02)' },
@@ -121,21 +122,21 @@ function renderTrendChart(d) {
       },
       {
         name: '真实品位', type: 'line', data: actuals, smooth: true,
-        lineStyle: { color: '#00b42a', width: 2, type: 'dashed' },
-        itemStyle: { color: '#00b42a' },
+        lineStyle: { color: 'var(--color-success)', width: 2, type: 'dashed' },
+        itemStyle: { color: 'var(--color-success)' },
         symbol: 'diamond', symbolSize: 5,
       },
       {
         name: '目标线', type: 'line',
         data: Array(dates.length).fill(targetLine),
-        lineStyle: { color: '#ff7d00', width: 1.5, type: 'dotted' },
+        lineStyle: { color: 'var(--color-warning)', width: 1.5, type: 'dotted' },
         symbol: 'none',
         lineStep: 'middle',
       },
       {
         name: '警戒区间', type: 'line',
         data: Array(dates.length).fill(upperWarn),
-        lineStyle: { color: '#f53f3f', width: 1, type: 'dashed', opacity: 0.5 },
+        lineStyle: { color: 'var(--color-danger)', width: 1, type: 'dashed', opacity: 0.5 },
         symbol: 'none',
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(245,63,63,0.06)' },
@@ -165,22 +166,22 @@ function renderDistChart(d) {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#fff',
-      borderColor: '#e5e6eb',
-      textStyle: { color: '#1d2129', fontSize: 12 },
+      backgroundColor: 'var(--bg-1)',
+      borderColor: 'var(--border-1)',
+      textStyle: { color: 'var(--text-1)', fontSize: 12 },
     },
     grid: { top: 20, right: 20, bottom: 35, left: 50 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { rotate: 30, fontSize: 11, color: '#86909c' },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      axisLabel: { rotate: 30, fontSize: 11, color: 'var(--text-3)' },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     yAxis: {
       type: 'value', name: '记录数',
-      nameTextStyle: { color: '#86909c', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#f2f3f5', type: 'dashed' } },
-      axisLabel: { color: '#86909c', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
+      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
+      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     animation: true,
     animationDuration: 1000,
@@ -192,7 +193,7 @@ function renderDistChart(d) {
         borderRadius: [4, 4, 0, 0],
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: '#3c7dff' },
-          { offset: 1, color: '#165dff' },
+          { offset: 1, color: 'var(--color-primary)' },
         ]),
       },
       barMaxWidth: 24,
@@ -211,29 +212,29 @@ function renderAlarmChart(d) {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#fff',
-      borderColor: '#e5e6eb',
-      textStyle: { color: '#1d2129', fontSize: 12 },
+      backgroundColor: 'var(--bg-1)',
+      borderColor: 'var(--border-1)',
+      textStyle: { color: 'var(--text-1)', fontSize: 12 },
     },
     grid: { top: 20, right: 20, bottom: 35, left: 50 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { rotate: 30, fontSize: 11, color: '#86909c' },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      axisLabel: { rotate: 30, fontSize: 11, color: 'var(--text-3)' },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     yAxis: {
       type: 'value', name: '告警数',
-      nameTextStyle: { color: '#86909c', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#f2f3f5', type: 'dashed' } },
-      axisLabel: { color: '#86909c', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
+      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
+      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     animation: true,
     animationDuration: 1000,
     series: [{
       type: 'line', data: counts, smooth: true,
-      lineStyle: { color: '#f53f3f', width: 2 },
-      itemStyle: { color: '#f53f3f' },
+      lineStyle: { color: 'var(--color-danger)', width: 2 },
+      itemStyle: { color: 'var(--color-danger)' },
       areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
         { offset: 0, color: 'rgba(245,63,63,0.2)' },
         { offset: 1, color: 'rgba(245,63,63,0.02)' },
@@ -276,23 +277,23 @@ function renderHistogram(d) {
     tooltip: {
       trigger: 'axis',
       formatter: '{b}: {c} 条记录 ({d}%)',
-      backgroundColor: '#fff',
-      borderColor: '#e5e6eb',
-      textStyle: { color: '#1d2129', fontSize: 12 },
+      backgroundColor: 'var(--bg-1)',
+      borderColor: 'var(--border-1)',
+      textStyle: { color: 'var(--text-1)', fontSize: 12 },
     },
     grid: { top: 20, right: 20, bottom: 30, left: 55 },
     xAxis: {
       type: 'category',
       data: buckets.map(b => b.label),
-      axisLabel: { fontSize: 11, color: '#86909c' },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      axisLabel: { fontSize: 11, color: 'var(--text-3)' },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     yAxis: {
       type: 'value', name: '频次',
-      nameTextStyle: { color: '#86909c', fontSize: 11 },
-      splitLine: { lineStyle: { color: '#f2f3f5', type: 'dashed' } },
-      axisLabel: { color: '#86909c', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
+      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
+      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
     },
     animation: true,
     animationDuration: 1200,
@@ -302,14 +303,14 @@ function renderHistogram(d) {
       itemStyle: {
         borderRadius: [5, 5, 0, 0],
         color: function(params) {
-          const colors = ['#86909c', '#165dff', '#00b42a', '#ff7d00', '#f53f3f', '#722ed1']
-          return colors[params.dataIndex] || '#165dff'
+          const colors = ['var(--text-3)', 'var(--color-primary)', 'var(--color-success)', 'var(--color-warning)', 'var(--color-danger)', '#722ed1']
+          return colors[params.dataIndex] || 'var(--color-primary)'
         },
       },
       barMaxWidth: 40,
       label: {
         show: true, position: 'top', fontSize: 11,
-        color: '#86909c', fontWeight: 600,
+        color: 'var(--text-3)', fontWeight: 600,
       },
     }],
   }, true)
@@ -334,9 +335,9 @@ const kpis = computed(() => {
   if (!report.value?.overview) return []
   const o = report.value.overview
   return [
-    { icon: 'Document', label: '分析记录总数', value: o.total_records ?? 0, unit: '条', color: '#165dff', format: 'int' },
-    { icon: 'Calendar', label: '日均分析量', value: o.avg_records_per_day ?? 0, unit: '条/天', color: '#00b42a', format: 'int' },
-    { icon: 'TrendCharts', label: '平均预测品位', value: o.overall_avg_pred ?? 0, unit: '%', color: '#ff7d00', format: 'float' },
+    { icon: 'Document', label: '分析记录总数', value: o.total_records ?? 0, unit: '条', color: 'var(--color-primary)', format: 'int' },
+    { icon: 'Calendar', label: '日均分析量', value: o.avg_records_per_day ?? 0, unit: '条/天', color: 'var(--color-success)', format: 'int' },
+    { icon: 'TrendCharts', label: '平均预测品位', value: o.overall_avg_pred ?? 0, unit: '%', color: 'var(--color-warning)', format: 'float' },
     { icon: 'Select', label: '平均真实品位', value: o.overall_avg_actual ?? 0, unit: '%', color: '#722ed1', format: 'float' },
   ]
 })
@@ -356,45 +357,33 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="reports-page">
-    <!-- 顶栏 -->
-    <BackToFactory class="page-back" />
-    <header class="rp-header">
-      <div class="header-left">
-        <h2>报表</h2>
-        <span class="sub">浮选过程数据分析与趋势追踪</span>
-      </div>
-      <div class="header-right">
-        <el-radio-group v-model="dateRange" size="small" @change="handleRangeChange">
-          <el-radio-button :value="7">近 7 天</el-radio-button>
-          <el-radio-button :value="30">近 30 天</el-radio-button>
-          <el-radio-button :value="90">近 90 天</el-radio-button>
-        </el-radio-group>
-        <el-button size="small" @click="exportReport('csv')">导出 CSV</el-button>
-        <el-button size="small" type="primary" @click="exportReport('xlsx')">导出 Excel</el-button>
-      </div>
-    </header>
+  <PageShell title="报表" sub="浮选过程数据分析与趋势追踪" kpi="none">
+    <template #actions>
+      <el-radio-group v-model="dateRange" size="small" @change="handleRangeChange">
+        <el-radio-button :value="7">近 7 天</el-radio-button>
+        <el-radio-button :value="30">近 30 天</el-radio-button>
+        <el-radio-button :value="90">近 90 天</el-radio-button>
+      </el-radio-group>
+      <el-button size="small" @click="exportReport('csv')">导出 CSV</el-button>
+      <el-button size="small" type="primary" @click="exportReport('xlsx')">导出 Excel</el-button>
+    </template>
 
     <div v-loading="loading" element-loading-text="数据加载中..." class="rp-body">
       <template v-if="report">
-        <!-- 核心指标卡 -->
+        <!-- 核心指标卡：统一 StatCard。
+             ★ 原来这里是四色图标 + 左侧彩色描边 + 光晕，是全站"拼装感"最重的一块；
+               按规范 KPI 只保留主色/中性两档，状态色不拿来当装饰。 -->
         <section class="kpi-row">
-          <div v-for="(kpi, i) in kpis" :key="i" class="kpi-card" :style="{ '--accent': kpi.color }">
-            <div class="kpi-icon"><el-icon><component :is="kpi.icon" /></el-icon></div>
-            <div class="kpi-content">
-              <div class="kpi-value" :class="{ ready: kpiReady }">
-                <span class="kpi-num">
-                  {{ kpi.format === 'int'
-                    ? (kpiReady ? Number(kpi.value).toLocaleString() : '—')
-                    : (kpiReady ? Number(kpi.value).toFixed(2) : '—')
-                  }}
-                </span>
-                <span class="kpi-unit">{{ kpi.unit }}</span>
-              </div>
-              <div class="kpi-label">{{ kpi.label }}</div>
-            </div>
-            <div class="kpi-glow"></div>
-          </div>
+          <StatCard
+            v-for="(kpi, i) in kpis"
+            :key="i"
+            :label="kpi.label"
+            :value="kpi.format === 'int'
+              ? (kpiReady ? Number(kpi.value).toLocaleString() : '—')
+              : (kpiReady ? Number(kpi.value).toFixed(2) : '—')"
+            :unit="kpi.unit"
+            :tone="i === 0 ? 'primary' : 'default'"
+          />
         </section>
 
         <!-- 预测范围提示 -->
@@ -482,98 +471,42 @@ onUnmounted(() => {
         <el-empty description="暂无报表数据" />
       </div>
     </div>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-/* ========== 页面容器 ========== */
-.reports-page {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 16px 20px 24px;
-  min-height: 100vh;
-  background: var(--bg-page, #f2f3f5);
-  box-sizing: border-box;
-}
+/* 页头/留白/返回入口由 PageShell 提供（2026-10-19 一致性整治） */
 
-/* ========== 顶栏 ========== */
-.rp-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 18px;
-}
-.header-left h2 {
-  margin: 0; font-size: 20px; font-weight: 700; color: var(--text-primary, #1d2129);
-}
-.sub { font-size: 12px; color: var(--text-muted, #86909c); margin-top: 2px; }
-
-/* ========== KPI 行 ========== */
+/* ========== KPI 行（卡片本体由 StatCard 负责） ========== */
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
   margin-bottom: 16px;
-}
-.kpi-card {
-  position: relative;
-  background: var(--bg-card, #fff);
-  border: 1px solid var(--border-color, #e5e6eb);
-  border-radius: 8px;
-  padding: 16px 20px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  overflow: hidden;
-  transition: transform 0.25s, box-shadow 0.25s;
-  box-shadow: var(--shadow-sm);
-  border-left: 3px solid var(--accent);
-}
-.kpi-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-.kpi-icon { font-size: 28px; flex-shrink: 0; }
-.kpi-content { flex: 1; }
-.kpi-value {
-  font-size: 26px; font-weight: 700; color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  transition: opacity 0.4s;
-  opacity: 0;
-}
-.kpi-value.ready { opacity: 1; }
-.kpi-unit { font-size: 13px; color: var(--text-secondary, #4e5969); margin-left: 4px; font-weight: 400; }
-.kpi-label { font-size: 12px; color: var(--text-muted, #86909c); margin-top: 3px; }
-.kpi-glow {
-  position: absolute; top: -15px; right: -15px;
-  width: 70px; height: 70px; border-radius: 50%;
-  background: radial-gradient(circle, var(--accent), transparent 70%);
-  opacity: 0.08; pointer-events: none;
 }
 
 /* ========== 范围横幅 ========== */
 .range-banner {
   display: flex; align-items: center; gap: 8px;
-  background: var(--bg-card, #fff);
-  border: 1px solid var(--border-color, #e5e6eb);
+  background: var(--bg-card, var(--bg-1));
+  border: 1px solid var(--border-color, var(--border-1));
   border-radius: 8px; padding: 10px 18px;
-  margin-bottom: 16px; font-size: 13px; color: var(--text-secondary, #4e5969);
+  margin-bottom: 16px; font-size: 13px; color: var(--text-secondary, var(--text-2));
 }
-.range-label { color: var(--text-muted, #86909c); }
-.range-divider { color: var(--border-color, #e5e6eb); }
+.range-label { color: var(--text-muted, var(--text-3)); }
+.range-divider { color: var(--border-color, var(--border-1)); }
 .range-days {
   margin-left: auto;
   padding: 2px 10px; border-radius: 8px;
-  background: #e8f3ff; color: #165dff; font-weight: 600; font-size: 12px;
+  background: #e8f3ff; color: var(--color-primary); font-weight: 600; font-size: 12px;
 }
 
 /* ========== 面板通用 ========== */
 .panel {
-  background: var(--bg-card, #fff);
-  border: 1px solid var(--border-color, #e5e6eb);
-  border-radius: 8px;
-  padding: 16px 20px;
-  box-shadow: var(--shadow-sm);
+  background: var(--bg-card, var(--bg-1));
+  border: 1px solid var(--border-color, var(--border-1));
+  border-radius: var(--panel-radius);
+  padding: var(--panel-pad-y) var(--panel-pad-x);
 }
 .panel-header {
   display: flex; align-items: center; gap: 8px;
@@ -582,9 +515,9 @@ onUnmounted(() => {
 .panel-icon { font-size: 15px; }
 .panel-header h3 {
   margin: 0; font-size: 14px; font-weight: 600;
-  color: var(--text-primary, #1d2129); flex: 1;
+  color: var(--text-primary, var(--text-1)); flex: 1;
 }
-.panel-hint { font-size: 11px; color: var(--text-muted, #86909c); }
+.panel-hint { font-size: 11px; color: var(--text-muted, var(--text-3)); }
 
 /* ========== 图表 ========== */
 .main-chart-panel { margin-bottom: 14px; }
@@ -605,13 +538,13 @@ onUnmounted(() => {
 /* ========== 表格 ========== */
 .count-badge {
   font-size: 11px; padding: 2px 8px; border-radius: 8px;
-  background: #f2f3f5; color: var(--text-muted, #86909c); font-weight: 600;
+  background: var(--bg-3); color: var(--text-muted, var(--text-3)); font-weight: 600;
 }
 .table-panel { overflow: hidden; }
-.pred-val { color: #165dff; font-weight: 600; font-family: Consolas, monospace; }
-.actual-val { color: #00b42a; font-weight: 600; font-family: Consolas, monospace; }
-.dev-good { color: #00b42a; font-weight: 600; font-family: Consolas, monospace; }
-.dev-warn { color: #ff7d00; font-weight: 600; font-family: Consolas, monospace; }
+.pred-val { color: var(--color-primary); font-weight: 600; font-family: Consolas, monospace; }
+.actual-val { color: var(--color-success); font-weight: 600; font-family: Consolas, monospace; }
+.dev-good { color: var(--color-success); font-weight: 600; font-family: Consolas, monospace; }
+.dev-warn { color: var(--color-warning); font-weight: 600; font-family: Consolas, monospace; }
 
 /* ========== 空状态 ========== */
 .empty-wrap { text-align: center; padding: 80px 0; }

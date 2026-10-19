@@ -81,3 +81,28 @@ h1, h2, h3, h4 {
 h1 { font-size: var(--text-2xl); }
 h2 { font-size: var(--text-xl); }
 h3 { font-size: var(--text-lg); }
+
+/* ============================================================
+   el-card 统一到 Panel 规格（2026-10-19 一致性整治）
+   ★ 为什么改全局而不是逐页换组件：
+     全站还有几十个 el-card，逐个换成 Panel 改动面太大、回归风险高；
+     而"卡片长什么样"本来就不该由页面决定 —— 在全局把它压到同一套令牌上，
+     存量页面即使结构没迁，视觉也先对齐了。后续新代码请直接用 Panel。
+   ============================================================ */
+:root {
+  --el-card-border-color: var(--border-1);
+  --el-card-border-radius: var(--panel-radius);
+  --el-card-padding: var(--panel-pad-y) var(--panel-pad-x);
+}
+.el-card {
+  border: 1px solid var(--border-1);
+  border-radius: var(--panel-radius);
+  box-shadow: none !important;   /* 浅色界面叠阴影会显脏，统一去掉 */
+}
+.el-card__header {
+  padding: var(--panel-pad-y) var(--panel-pad-x);
+  border-bottom: 1px solid var(--border-2);
+}
+.el-card__body {
+  padding: var(--panel-pad-y) var(--panel-pad-x);
+}

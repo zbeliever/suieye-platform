@@ -10,7 +10,8 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 // ---- 字典 ----
 const POSITIONS = ['浮选班长', '磨矿班长', '值班调度', '安全员', '工艺工程师', '设备点检员']
@@ -422,50 +423,49 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
 </script>
 
 <template>
-  <div class="page">
-    <!-- ===== 顶部：标题 + 聚合说明 ===== -->
-    <BackToFactory class="page-back" />
-    <div class="page-head">
-      <div class="head-left">
-        <h1>告警</h1>
-        <span class="head-sub">
-          {{ stats.total }} 条告警聚合为 <b>{{ stats.events || 0 }}</b> 个事件
-          <template v-if="stats.redundancy?.redundant">
-            · 消除 <b>{{ stats.redundancy.redundant }}</b> 条同帧冗余
-          </template>
-          · 严重 <b>{{ stats.danger }}</b> / 预警 <b>{{ stats.warning }}</b>
-        </span>
-      </div>
-      <div class="head-actions">
-        <span class="auto-hint" :class="{ paused: autoPaused }">
-          <template v-if="autoPaused">自动刷新已暂停（处置中）</template>
-          <template v-else>自动刷新 30s<template v-if="lastUpdate"> · 最后更新 {{ lastUpdate }}</template></template>
-        </span>
-        <el-button size="small" :loading="loading" @click="loadGroups(true)">
-          <el-icon><Refresh /></el-icon>&nbsp;刷新
-        </el-button>
-      </div>
-    </div>
+  <PageShell
+    title="告警"
+    :sub="`${stats.total} 条告警聚合为 ${stats.events || 0} 个事件 · 严重 ${stats.danger} / 预警 ${stats.warning}`"
+  >
+    <template #actions>
+      <span class="auto-hint" :class="{ paused: autoPaused }">
+        <template v-if="autoPaused">自动刷新已暂停（处置中）</template>
+        <template v-else>自动刷新 30s<template v-if="lastUpdate"> · 最后更新 {{ lastUpdate }}</template></template>
+      </span>
+      <el-button size="small" :loading="loading" @click="loadGroups(true)">
+        <el-icon><Refresh /></el-icon>&nbsp;刷新
+      </el-button>
+    </template>
 
-    <!-- ===== KPI 数据带 ===== -->
-    <div class="kpi-band">
-      <div class="kpi" v-for="k in [
-        { key: 'new', label: '待处理', value: stats.new, sub: `${stage.pct(stats.new)}% 未处置`, color: 'var(--color-danger)' },
-        { key: 'acknowledged', label: '已确认', value: stats.acknowledged, sub: `${stage.pct(stats.acknowledged)}% 已受理`, color: 'var(--color-warning)' },
-        { key: 'in_progress', label: '处理中', value: stats.in_progress, sub: '现场处置中', color: 'var(--color-primary)' },
-        { key: 'closed', label: '已闭环', value: stats.closed, sub: `${stage.pct(stats.closed)}% 闭环率`, color: 'var(--color-success)' },
-        { key: 'false_positive', label: '误报', value: stats.false_positive, sub: '规则调优依据', color: 'var(--text-3)' },
-      ]" :key="k.key">
-        <div class="kpi-value" :style="{ color: k.color }">{{ k.value }}</div>
-        <div class="kpi-label">{{ k.label }}</div>
-        <div class="kpi-sub">{{ k.sub }}</div>
-      </div>
-      <div class="kpi kpi-wide">
-        <div class="kpi-value">{{ mttaText }}</div>
-        <div class="kpi-label">响应时长中位数</div>
-        <div class="kpi-sub">{{ mttaSub }}</div>
-      </div>
-    </div>
+    <!-- 四格 KPI（规范：固定 4 格）。
+         ★ 原来是 6 格"数据带"（五段状态 + 响应时长），且用 1px 缝隙拼成整块；
+           现在统一成 4 张 StatCard：已确认并入"处理中"副行、误报并入"已闭环"副行，
+           数字一个没丢，只是不再各占一格。 -->
+    <template #kpi>
+      <StatCard
+        label="待处理"
+        :value="stats.new"
+        :foot="`${stage.pct(stats.new)}% 未处置`"
+        tone="danger"
+      />
+      <StatCard
+        label="处理中"
+        :value="stats.in_progress"
+        :foot="`已确认 ${stats.acknowledged} 条`"
+        tone="primary"
+      />
+      <StatCard
+        label="已闭环"
+        :value="stats.closed"
+        :foot="`闭环率 ${stage.pct(stats.closed)}% · 误报 ${stats.false_positive}`"
+        tone="success"
+      />
+      <StatCard
+        label="响应时长中位数"
+        :value="mttaText"
+        :foot="mttaSub"
+      />
+    </template>
 
     <!-- ===== 筛选 ===== -->
     <div class="toolbar">
@@ -892,37 +892,13 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
         </el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.page { height: 100%; display: flex; flex-direction: column; gap: var(--space-3); }
-
-/* ---- 顶部 ---- */
-.page-head { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; }
-.head-actions { display: flex; align-items: center; gap: 10px; }
+/* 页头/留白/返回入口由 PageShell 提供（2026-10-19 一致性整治） */
 .auto-hint { font-size: var(--text-xs); color: var(--text-3); }
 .auto-hint.paused { color: var(--color-warning); }
-.head-left { display: flex; align-items: baseline; gap: var(--space-3); }
-h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(--text-1); margin: 0; }
-.head-sub { font-size: var(--text-sm); color: var(--text-3); }
-.head-sub b { color: var(--color-primary); font-weight: var(--weight-medium); }
-
-/* ---- KPI 带 ---- */
-.kpi-band {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.3fr);
-  gap: 1px;
-  background: var(--border-1);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-.kpi { background: var(--bg-1); padding: 10px 14px; }
-.kpi-value { font-size: 22px; font-weight: var(--weight-semibold); line-height: 1.15; color: var(--text-1); }
-.kpi-label { font-size: var(--text-sm); color: var(--text-2); margin-top: 2px; }
-.kpi-sub { font-size: var(--text-xs); color: var(--text-3); margin-top: 1px; }
 
 /* ---- 筛选 ---- */
 .toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-2); }
@@ -988,8 +964,8 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(
   font-size: 11px; padding: 0 5px; border-radius: var(--radius-sm); line-height: 16px;
   font-weight: var(--weight-medium); flex: 0 0 auto;
 }
-.ev-level.danger { color: #fff; background: var(--color-danger); }
-.ev-level.warning { color: #fff; background: var(--color-warning); }
+.ev-level.danger { color: var(--bg-1); background: var(--color-danger); }
+.ev-level.warning { color: var(--bg-1); background: var(--color-warning); }
 .ev-rule { font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-1); }
 .ev-count {
   font-size: 11px; color: var(--color-primary); background: var(--color-primary-bg);
@@ -1105,7 +1081,7 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(
   cursor: pointer; font-family: inherit; transition: all var(--transition);
 }
 .hf-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
-.hf-btn.on { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.hf-btn.on { background: var(--color-primary); border-color: var(--color-primary); color: var(--bg-1); }
 .hf-btn.danger.on { background: var(--color-danger); border-color: var(--color-danger); }
 .hf-row { display: flex; gap: 8px; }
 .hf-submit { display: flex; align-items: center; justify-content: space-between; }
@@ -1128,8 +1104,8 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(
   cursor: pointer; font-family: inherit; transition: all var(--transition);
 }
 .bb-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
-.bb-btn.primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
-.bb-btn.primary:hover { color: #fff; opacity: 0.9; }
+.bb-btn.primary { background: var(--color-primary); border-color: var(--color-primary); color: var(--bg-1); }
+.bb-btn.primary:hover { color: var(--bg-1); opacity: 0.9; }
 /* 批量处置弹窗 */
 .batch-dlg .bd-label { font-size: var(--text-xs); color: var(--text-3); margin: 10px 0 6px; }
 .batch-dlg .bd-label:first-child { margin-top: 0; }
@@ -1145,7 +1121,7 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(
 .rc-src { display: inline-flex; align-items: center; gap: 4px; }
 .rc-join { color: var(--text-4); font-style: normal; margin: 0 2px; }
 .rc-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; background: var(--text-4); }
-.rc-dot.on { background: #00b42a; }
+.rc-dot.on { background: var(--color-success); }
 .rc-dot.far { background: var(--color-warning); }
 .rc-dot.off { background: var(--text-4); }
 .rc-src-name { color: var(--text-2); }
@@ -1161,7 +1137,7 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(
 .rc-line1 { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .rc-rank {
   flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%;
-  background: var(--text-1); color: #fff; font-size: 10px;
+  background: var(--text-1); color: var(--bg-1); font-size: 10px;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .rc-title { flex: 1 1 auto; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-1); }
@@ -1199,7 +1175,7 @@ h1 { font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(
 .rc-missing-item { display: flex; align-items: flex-start; gap: 5px; font-size: var(--text-xs); color: var(--text-3); line-height: 1.5; }
 .rc-warn {
   flex: 0 0 auto; width: 13px; height: 13px; border-radius: 50%; margin-top: 1px;
-  background: var(--color-warning); color: #fff; font-size: 9px; font-style: normal;
+  background: var(--color-warning); color: var(--bg-1); font-size: 9px; font-style: normal;
   display: inline-flex; align-items: center; justify-content: center; font-weight: bold;
 }
 .rc-caveat { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border-2); font-size: 10px; color: var(--text-4); }

@@ -3,7 +3,8 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 const router = useRouter()
 
@@ -200,14 +201,14 @@ function goRoute(route) {
 
 // ---- ECharts 渲染（配色收敛到 3 色：主色 + 中性灰 + 状态色） ----
 function renderCharts() {
-  const C1 = getComputedStyle(document.documentElement).getPropertyValue('--chart-1').trim() || '#165dff'
-  const C2 = getComputedStyle(document.documentElement).getPropertyValue('--chart-2').trim() || '#86909c'
-  const C3 = getComputedStyle(document.documentElement).getPropertyValue('--chart-3').trim() || '#00b42a'
-  const CDANGER = getComputedStyle(document.documentElement).getPropertyValue('--chart-danger').trim() || '#f53f3f'
-  const CWARN = getComputedStyle(document.documentElement).getPropertyValue('--chart-warning').trim() || '#ff7d00'
+  const C1 = getComputedStyle(document.documentElement).getPropertyValue('--chart-1').trim() || 'var(--color-primary)'
+  const C2 = getComputedStyle(document.documentElement).getPropertyValue('--chart-2').trim() || 'var(--text-3)'
+  const C3 = getComputedStyle(document.documentElement).getPropertyValue('--chart-3').trim() || 'var(--color-success)'
+  const CDANGER = getComputedStyle(document.documentElement).getPropertyValue('--chart-danger').trim() || 'var(--color-danger)'
+  const CWARN = getComputedStyle(document.documentElement).getPropertyValue('--chart-warning').trim() || 'var(--color-warning)'
   const C1LIGHT = getComputedStyle(document.documentElement).getPropertyValue('--chart-1-light').trim() || '#94b8ff'
-  const TEXT3 = getComputedStyle(document.documentElement).getPropertyValue('--text-3').trim() || '#86909c'
-  const BORDER = getComputedStyle(document.documentElement).getPropertyValue('--border-1').trim() || '#e5e6eb'
+  const TEXT3 = getComputedStyle(document.documentElement).getPropertyValue('--text-3').trim() || 'var(--text-3)'
+  const BORDER = getComputedStyle(document.documentElement).getPropertyValue('--border-1').trim() || 'var(--border-1)'
 
   // 1. 铅品位趋势（主色 + 中性灰对比）
   if (trendChartRef.value) {
@@ -347,35 +348,56 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="dashboard">
-    <!-- 页头（去 emoji，克制） -->
-    <BackToFactory class="page-back" />
-    <div class="page-header">
-      <div>
-        <h1>仪表盘</h1>
-        <p class="page-sub">铅锌矿浮选过程智能视觉分析 · {{ new Date().toLocaleDateString('zh-CN') }}</p>
-      </div>
-      <div class="header-actions">
-        <span class="auto-hint">
-          自动刷新 30s<template v-if="lastUpdate"> · 最后更新 {{ lastUpdate }}</template>
-        </span>
-        <el-button size="small" :loading="loading" @click="loadData()">
-          <el-icon><Refresh /></el-icon>&nbsp;刷新
-        </el-button>
-      </div>
-    </div>
+  <PageShell
+    title="仪表盘"
+    :sub="`铅锌矿浮选过程智能视觉分析 · ${new Date().toLocaleDateString('zh-CN')}`"
+  >
+    <template #actions>
+      <span class="auto-hint">
+        自动刷新 30s<template v-if="lastUpdate"> · 最后更新 {{ lastUpdate }}</template>
+      </span>
+      <el-button size="small" :loading="loading" @click="loadData()">
+        <el-icon><Refresh /></el-icon>&nbsp;刷新
+      </el-button>
+    </template>
 
-    <!-- 今日六维 KPI（统一主色，状态色仅状态时用） -->
-    <div class="kpi-row">
-      <div v-for="(kpi, i) in kpis" :key="i" class="kpi-card" @click="goRoute(kpi.route)">
-        <el-icon class="kpi-icon"><component :is="kpi.icon" /></el-icon>
-        <div class="kpi-body">
-          <div class="kpi-value">{{ kpi.value }}<span v-if="kpi.unit" class="unit">{{ kpi.unit }}</span></div>
-          <div class="kpi-title">{{ kpi.title }}</div>
-          <div class="kpi-sub" :style="{ color: kpi.subColor || 'var(--text-3)' }">{{ kpi.sub || '—' }}</div>
-        </div>
-      </div>
-    </div>
+    <!-- 今日四格 KPI（规范：固定 4 格）。
+         ★ 原为六格（分析/设备/安全/告警/品位/班产），按"固定 4 格"取舍：
+           保留 今日分析 · 设备在线率 · 今日告警 · 平均品位；
+           今日安全巡检并入告警格副行（数字不丢），班产达标属报表口径，不在门面重复。 -->
+    <template #kpi>
+      <StatCard
+        class="kpi-link"
+        label="今日分析"
+        :value="kpis[0].value"
+        :foot="kpis[0].sub"
+        tone="primary"
+        @click="goRoute(kpis[0].route)"
+      />
+      <StatCard
+        class="kpi-link"
+        label="设备在线率"
+        :value="kpis[1].value"
+        :foot="kpis[1].sub"
+        @click="goRoute(kpis[1].route)"
+      />
+      <StatCard
+        class="kpi-link"
+        label="今日告警待处理"
+        :value="kpis[3].value"
+        :foot="`巡检 ${kpis[2].value} · ${kpis[3].sub}`"
+        tone="warning"
+        @click="goRoute(kpis[3].route)"
+      />
+      <StatCard
+        class="kpi-link"
+        label="平均铅品位"
+        :value="kpis[4].value"
+        :unit="kpis[4].unit"
+        :foot="kpis[4].sub"
+        @click="goRoute(kpis[4].route)"
+      />
+    </template>
 
     <!-- 场景状态 -->
     <section class="block">
@@ -537,103 +559,15 @@ onUnmounted(() => {
         <el-descriptions-item label="品位最大值">{{ stats.grade_distribution?.max?.toFixed(2) }}%</el-descriptions-item>
       </el-descriptions>
     </section>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.dashboard {
-  max-width: 1320px;
-  margin: 0 auto;
-}
-
-/* 页头 */
-.page-header {
-  margin-bottom: var(--space-5);
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-/* 返回入口独占页头上方一行：演示时"从厂区进来 → 一键回去"的动线最直观，
-   不要和 h1 挤在一行（h1 是 22px，旁边挂个 26px 按钮视觉重心会歪） */
-.page-back { margin-bottom: var(--space-3); }
-.header-actions { display: flex; align-items: center; gap: 10px; }
+/* 页头/留白/返回入口由 PageShell 提供（2026-10-19 一致性整治） */
+.kpi-link { cursor: pointer; }
+.kpi-link:hover { border-color: var(--color-primary); }
 .auto-hint { font-size: var(--text-xs); color: var(--text-3); }
-.page-header h1 {
-  margin: 0;
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-semibold);
-}
-.page-sub {
-  color: var(--text-3);
-  font-size: var(--text-sm);
-  margin-top: var(--space-1);
-}
 
-/* 今日六维 KPI —— 统一主色，不再彩虹 */
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-}
-.kpi-card {
-  background: var(--bg-1);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius);
-  padding: var(--space-3) var(--space-3);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  cursor: pointer;
-  transition: border-color var(--transition), background var(--transition);
-  min-height: 92px;
-}
-.kpi-card:hover {
-  border-color: var(--color-primary);
-  background: var(--color-primary-bg);
-}
-.kpi-icon {
-  font-size: 20px;
-  color: var(--color-primary);
-  flex-shrink: 0;
-}
-.kpi-body {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-.kpi-value {
-  font-size: var(--text-xl);
-  font-weight: var(--weight-semibold);
-  line-height: var(--leading-tight);
-  color: var(--text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.unit {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-normal);
-  margin-left: 2px;
-  color: var(--text-3);
-}
-.kpi-title {
-  font-size: var(--text-xs);
-  color: var(--text-3);
-  margin-top: 2px;
-  white-space: nowrap;
-}
-.kpi-sub {
-  font-size: 11px;
-  margin-top: 2px;
-  font-weight: var(--weight-medium);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 区块标题 */
 .block {
   margin-bottom: var(--space-5);
 }

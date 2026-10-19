@@ -378,9 +378,9 @@ function renderTrendChart() {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#fff',
-      borderColor: '#e5e6eb',
-      textStyle: { color: '#1d2129', fontSize: 13 },
+      backgroundColor: 'var(--bg-1)',
+      borderColor: 'var(--border-1)',
+      textStyle: { color: 'var(--text-1)', fontSize: 13 },
       valueFormatter: (v) => `${v} %`,
     },
     grid: { top: 16, right: 14, bottom: 28, left: 48 },
@@ -388,17 +388,17 @@ function renderTrendChart() {
       type: 'category',
       data: dates,
       boundaryGap: false,
-      axisLine: { lineStyle: { color: '#e5e6eb' } },
+      axisLine: { lineStyle: { color: 'var(--border-1)' } },
       axisTick: { show: false },
-      axisLabel: { color: '#86909c', fontSize: 12, interval: Math.ceil(dates.length / 8) },
+      axisLabel: { color: 'var(--text-3)', fontSize: 12, interval: Math.ceil(dates.length / 8) },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      splitLine: { lineStyle: { color: '#f2f3f5' } },
+      splitLine: { lineStyle: { color: 'var(--bg-3)' } },
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#86909c', fontSize: 12 },
+      axisLabel: { color: 'var(--text-3)', fontSize: 12 },
     },
     series: [
       {
@@ -407,7 +407,7 @@ function renderTrendChart() {
         data: actual,
         smooth: true,
         symbol: 'none',
-        lineStyle: { color: '#c9cdd4', width: 1.6, type: 'dashed' },
+        lineStyle: { color: 'var(--text-4)', width: 1.6, type: 'dashed' },
       },
       {
         name: '模型预测',
@@ -417,8 +417,8 @@ function renderTrendChart() {
         symbol: 'circle',
         symbolSize: 5,
         showSymbol: false,
-        lineStyle: { color: '#165dff', width: 2.2 },
-        itemStyle: { color: '#165dff' },
+        lineStyle: { color: 'var(--color-primary)', width: 2.2 },
+        itemStyle: { color: 'var(--color-primary)' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(22,93,255,0.10)' },
@@ -1017,12 +1017,12 @@ onUnmounted(() => {
 }
 .flow-node.planned {
   background: transparent;
-  border: 1px dashed #c9cdd4;
+  border: 1px dashed var(--text-4);
   cursor: default;
 }
 .flow-node.planned:hover {
   background: transparent;
-  border-color: #c9cdd4;
+  border-color: var(--text-4);
 }
 .node-head {
   display: flex;
@@ -1050,7 +1050,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 .flow-node.primary .node-name {
-  color: #fff;
+  color: var(--bg-1);
 }
 .flow-node.planned .node-name {
   color: var(--text-3);
@@ -1067,7 +1067,7 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 .flow-node.primary .node-metric {
-  color: #fff;
+  color: var(--bg-1);
 }
 .flow-node.planned .node-metric {
   color: var(--text-3);
@@ -1541,9 +1541,9 @@ onUnmounted(() => {
   line-height: 1;
   padding: 2px 5px;
   border-radius: 4px;
-  background: #f2f3f5;
-  color: #86909c;
-  border: 1px solid #e5e6eb;
+  background: var(--bg-3);
+  color: var(--text-3);
+  border: 1px solid var(--border-1);
 }
 .equip-cell.bad .cell-name,
 .equip-cell.bad .cell-temp {

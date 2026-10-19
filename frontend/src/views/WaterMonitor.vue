@@ -1,37 +1,37 @@
 <template>
-  <div class="water-page" v-loading="loading">
-    <BackToFactory class="page-back" />
-    <!-- ====== 页头（功能名 = navMap 短名，供导航与页面标题对齐） ====== -->
-    <header class="water-head">
-      <h1>水质监测</h1>
-      <span class="water-sub">回水可回用性 · 5 点位在线监测</span>
-    </header>
-
-    <!-- ====== KPI 统计带 ====== -->
-    <section class="kpi-strip">
-      <div class="kpi-cell">
-        <div class="kpi-num">{{ overview.station_count ?? '—' }}<span class="kpi-unit">个</span></div>
-        <div class="kpi-label">监测点位</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num" :class="{ warn: (overview.abnormal_count || 0) > 0 }">
-          {{ overview.abnormal_count ?? '—' }}<span class="kpi-unit">个</span>
-        </div>
-        <div class="kpi-label">水质异常点位</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num">{{ overview.avg_reuse_score ?? '—' }}<span class="kpi-unit">分</span></div>
-        <div class="kpi-label">平均回水可回用评分</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num">{{ overview.events_7d ?? '—' }}<span class="kpi-unit">起</span></div>
-        <div class="kpi-label">近 7 天异常事件</div>
-      </div>
-      <div class="kpi-cell">
-        <div class="kpi-num">{{ overview.total_flow_m3h ?? '—' }}<span class="kpi-unit">m³/h</span></div>
-        <div class="kpi-label">回水总流量</div>
-      </div>
-    </section>
+  <PageShell
+    v-loading="loading"
+    title="水质监测"
+    sub="回水可回用性 · 5 点位在线监测"
+  >
+    <!-- 四格 KPI：原为 5 格自定义统计带；
+         回水总流量并入"监测点位"副行（数字不丢），其余四格统一 StatCard。 -->
+    <template #kpi>
+      <StatCard
+        label="监测点位"
+        :value="overview.station_count ?? '—'"
+        unit="个"
+        :foot="`回水总流量 ${overview.total_flow_m3h ?? '—'} m³/h`"
+      />
+      <StatCard
+        label="水质异常点位"
+        :value="overview.abnormal_count ?? '—'"
+        unit="个"
+        :tone="(overview.abnormal_count || 0) > 0 ? 'warning' : 'default'"
+        :foot="(overview.abnormal_count || 0) > 0 ? '存在异常，需处置' : '全部正常'"
+      />
+      <StatCard
+        label="平均回水可回用评分"
+        :value="overview.avg_reuse_score ?? '—'"
+        unit="分"
+        tone="primary"
+      />
+      <StatCard
+        label="近 7 天异常事件"
+        :value="overview.events_7d ?? '—'"
+        unit="起"
+      />
+    </template>
 
     <!-- ====== 5 点位状态卡 ====== -->
     <section class="station-grid">
@@ -258,7 +258,7 @@
         </div>
       </div>
     </section>
-  </div>
+  </PageShell>
 </template>
 
 <script setup>
@@ -267,7 +267,8 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import api from '../api'
 import { useWebSocket } from '../api/ws'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 const CARD_METRICS = ['ss', 'turbidity', 'cod', 'cu']
 
@@ -433,10 +434,10 @@ function renderTrend() {
 
   const markLines = []
   if (th.warn != null) {
-    markLines.push({ yAxis: th.warn, label: { formatter: `预警 ${th.warn}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-warning', '#ff7d00'), type: 'dashed', width: 1 } })
+    markLines.push({ yAxis: th.warn, label: { formatter: `预警 ${th.warn}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed', width: 1 } })
   }
   if (th.danger != null) {
-    markLines.push({ yAxis: th.danger, label: { formatter: `危险 ${th.danger}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-danger', '#f53f3f'), type: 'dashed', width: 1 } })
+    markLines.push({ yAxis: th.danger, label: { formatter: `危险 ${th.danger}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-danger', 'var(--color-danger)'), type: 'dashed', width: 1 } })
   }
 
   trendChart.setOption({
@@ -444,21 +445,21 @@ function renderTrend() {
     grid: { top: 26, right: 46, bottom: 34, left: 54 },
     xAxis: {
       type: 'category', data: times, boundaryGap: false,
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c'), hideOverlap: true },
-      axisLine: { lineStyle: { color: cssVar('--border-1', '#e5e6eb') } },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
+      axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
     },
     yAxis: {
       type: 'value', scale: true,
       name: th.unit || '',
-      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-      splitLine: { lineStyle: { color: cssVar('--border-2', '#f2f3f5') } },
+      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+      splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
     },
     series: [{
       name: th.label || metric.value,
       type: 'line', smooth: true, showSymbol: false, data: values,
-      lineStyle: { width: 2, color: cssVar('--chart-1', '#165dff') },
-      itemStyle: { color: cssVar('--chart-1', '#165dff') },
+      lineStyle: { width: 2, color: cssVar('--chart-1', 'var(--color-primary)') },
+      itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)') },
       areaStyle: { color: cssVar('--chart-1-bg', '#e8f3ff'), opacity: 0.6 },
       markLine: markLines.length ? { silent: true, symbol: 'none', data: markLines } : undefined,
     }],
@@ -479,19 +480,19 @@ function renderScatter() {
     grid: { top: 16, right: 20, bottom: 34, left: 54 },
     xAxis: {
       type: 'value', scale: true, name: `${bm?.label || ''}${bm?.unit ? ' (' + bm.unit + ')' : ''}`,
-      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-      splitLine: { lineStyle: { color: cssVar('--border-2', '#f2f3f5') } },
+      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+      splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
     },
     yAxis: {
       type: 'value', scale: true, name: '铅品位 %',
-      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', '#86909c') },
-      splitLine: { lineStyle: { color: cssVar('--border-2', '#f2f3f5') } },
+      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
+      splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
     },
     series: [{
       type: 'scatter', data: pts, symbolSize: 9,
-      itemStyle: { color: cssVar('--chart-1', '#165dff'), opacity: 0.75 },
+      itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)'), opacity: 0.75 },
     }],
   }, true)
 }
@@ -739,8 +740,8 @@ onUnmounted(() => {
 .panel {
   background: var(--bg-1);
   border: 1px solid var(--border-1);
-  border-radius: var(--radius);
-  padding: 14px 16px;
+  border-radius: var(--panel-radius);
+  padding: var(--panel-pad-y) var(--panel-pad-x);
   min-width: 0;
 }
 .panel-head {
