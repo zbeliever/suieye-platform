@@ -36,6 +36,14 @@ async def startup():
     print(f"[SuiEye] 启动 - 版本 {settings.APP_VERSION}")
     print(f"[SuiEye] 场景包目录: {settings.SCENE_PACKAGES_DIR}")
 
+    # ★ 建表 + 轻量迁移（2026-10-19）
+    #   踩过的坑：`init_db()` 早就写好了，但**从来没有人调用**——
+    #   项目当初是靠一次性脚本建的表，之后新增的 webhook_* 表和
+    #   alarm_records.source 列在老库上永远不会出现，一查就 no such table。
+    #   init_db 本身是幂等的（create_all + PRAGMA 检查），放 startup 最安全。
+    from backend.models.database import init_db
+    init_db()
+
     # 预热：加载 XGBoost 模型 + 校验场景包，避免首帧分析承担 13s 懒加载
     from backend.algorithms.predictor import _load_xgb_model
     from backend.scenes.runtime import list_available_scenes, load_scene_config

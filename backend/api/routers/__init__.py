@@ -14,6 +14,7 @@ from .water import router as water_router
 from .tailings import router as tailings_router
 from .settings import router as settings_router
 from .courier import router as courier_router
+from .webhooks import router as webhooks_router
 
 router = APIRouter()
 router.include_router(scenes_router)
@@ -27,4 +28,5 @@ router.include_router(water_router)
 router.include_router(tailings_router)
 router.include_router(settings_router)
 router.include_router(courier_router)
+router.include_router(webhooks_router)
 router.include_router(ws_router)

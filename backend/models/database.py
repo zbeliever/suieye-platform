@@ -162,6 +162,13 @@ class AlarmRecord(Base):
     silence_reason = Column(String(200))
     suppressed_by = Column(Integer)              # 因果抑制的根因告警 id（P2 预留）
 
+    # ---- 外部接入（v3, 2026-10-19）----
+    # ★ 以前所有告警都是 SuiEye 自己分析产生的，"谁报的"无从区分。
+    #   接入 DCS / MES / 视频分析盒子后，必须能一眼看出这条是自家算的还是别人推的。
+    #   source: internal = 本系统分析产生 / external = 外部系统推入
+    source = Column(String(20), default="internal", index=True)
+    origin = Column(String(50), default="SuiEye")   # 来源系统名，界面直接展示
+
 
 class AlarmAction(Base):
     """告警处置流水（审计日志）— 每次状态流转写一条
@@ -463,7 +470,71 @@ class EquipmentOperationLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class WebhookSubscription(Base):
+    """告警出站订阅 —— 把告警推给其他软件（MES / 钉钉 / 企业微信 / 自建平台）
+
+    ★ 2026-10-19 新增。在这之前 SuiEye 是座孤岛：告警只有自家页面能看见，
+      别的系统想知道"浮选出事了"，只能派人盯着这块屏。
+    """
+    __tablename__ = "webhook_subscriptions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    url = Column(String(500), nullable=False)
+    events = Column(String(200), default="alarm.created")   # 逗号分隔的事件名
+    secret = Column(String(100), default="")                # HMAC-SHA256 签名密钥
+    description = Column(String(200), default="")
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # 运行状态：列表页直接展示，不必再翻投递流水
+    last_status = Column(Integer)          # 最近一次 HTTP 状态码
+    last_error = Column(Text)
+    last_attempt_at = Column(DateTime)
+    ok_count = Column(Integer, default=0)
+    fail_count = Column(Integer, default=0)
+
+
+class WebhookDelivery(Base):
+    """投递流水 —— 保留最近若干条，作为"到底推没推出去"的可审计证据"""
+    __tablename__ = "webhook_deliveries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subscription_id = Column(Integer, index=True)
+    event = Column(String(50))
+    payload = Column(JSON)
+    status_code = Column(Integer)
+    ok = Column(Boolean, default=False)
+    error = Column(Text)
+    elapsed_ms = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 def init_db():
     """建表（幂等）"""
     Base.metadata.create_all(engine)
+    _ensure_columns()
     return engine
+
+
+def _ensure_columns():
+    """轻量迁移：create_all 只建新表，**不会给已有表加列**。
+
+    ★ SQLite 的 ALTER TABLE ADD COLUMN 很快且可重复执行（先查 PRAGMA），
+      所以不引入 alembic 迁移链——演示版没必要为两个列上一整套迁移框架。
+      新增列必须同时写进这里，否则老库启动后一查就报 no such column。
+    """
+    from sqlalchemy import text
+
+    wanted = {
+        "alarm_records": [
+            ("source", "VARCHAR(20) DEFAULT 'internal'"),
+            ("origin", "VARCHAR(50) DEFAULT 'SuiEye'"),
+        ],
+    }
+    with engine.begin() as conn:
+        for table, cols in wanted.items():
+            have = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            for name, ddl in cols:
+                if name not in have:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+                    print(f"[db] 迁移：{table}.{name} 已添加")

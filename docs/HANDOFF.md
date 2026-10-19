@@ -582,4 +582,87 @@ $NODE node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5188
 `--color-warning-border` / `--color-danger-border`（状态浅底的描边）。
 顺手删掉 `--bg-video` 的重复定义（同一令牌写了两行）。
 
+---
+
+## 十七、告警实时性 + 对外接入（2026-10-19）
+
+老板："我的告警系统要有实时性，也可以接入其他软件，可以用 websocket。"
+
+### 17.1 先纠正一个我自己的误判
+
+我一开始判断是"WS 通道接错了数据源"。查下去发现比这更彻底：**整条 WS 从来没通过**。
+
+| # | 真问题 | 位置 |
+|---|---|---|
+| 1 | **vite 只代理了 `/api`，没代理 `/ws`** → 前端连 `ws://127.0.0.1:5188/ws/alarms` 直接失败，3 秒重连，无限循环 | `frontend/vite.config.js` |
+| 2 | `alarms` 频道推的是**随机假告警**（每 15~30 秒凭空造一条「人员闯入危险区」，不写库） | `ws.py: _push_alarms_loop` |
+| 3 | 真告警（`analysis.py` 写 `AlarmRecord`）**没有任何广播**；`push_alarm_event` / `push_alarm_sync` 定义了但从未被调用 | `analysis.py:153` |
+| 4 | 告警页纯轮询 **30 秒** | `Alarms.vue: AUTO_REFRESH_MS` |
+
+第 1 条是最隐蔽的：代码看起来"实时链路齐全"（有 ws.py、有 useWebSocket、有自动重连），
+但因为没有代理，**所有 WS 功能一直是空转**——水质页的实时更新同样是假的，一直靠 30 秒轮询兜底。
+"代码写了"和"跑通了"是两件事，这种坑只有端到端探针能抓出来。
+
+### 17.2 改动
+
+**后端**
+
+- `ws.py` 重写：事件格式统一 `{event, ts, data}`；删掉假告警循环（`SUIEYE_DEMO_FEED=1` 才启，且标 `demo:true`）；
+  新增 `emit()` / `publish_alarm()` / `publish_alarm_update()` / `publish_sync()`（同步端点用）
+- `analysis.py`：写完 `AlarmRecord` 后广播（带真实 id，弹出来那条一定查得到）
+- `alarms.py`：
+  - 新增 `POST /api/alarms/ingest`（`X-API-Key` 鉴权 + `external_id` 去重）
+  - `_do_handle` 处置后广播 `alarm.updated`（A 窗口处置，B 窗口立刻同步）
+  - `_alarm_dict` 补 `source` / `origin`（列表、详情、分组都要带，否则界面上分不清谁报的）
+- `webhooks.py` 新增：订阅 CRUD + 投递（HMAC-SHA256）+ 投递流水 + 测试按钮接口
+- `database.py`：`AlarmRecord` 加 `source` / `origin`；新增 `webhook_subscriptions` / `webhook_deliveries`；`_ensure_columns()` 幂等迁移
+- `config.py`：`ALARM_INGEST_KEY` / `WS_TOKEN` / `WEBHOOK_TIMEOUT` / `WEBHOOK_KEEP_DELIVERIES`
+
+**前端**
+
+- `vite.config.js` 补 `/ws` 代理（**`ws: true` 必填**）
+- `Alarms.vue`：订阅 `alarms`，收到即静默刷新；处置中不打断，改为累积「N 条新告警」可点提示；页头显示"实时推送 / 重连中"
+- `ws.js`：通知适配新事件格式，外部告警标 `[DCS]` 前缀；已在告警页则不弹
+- `WaterMonitor.vue`：同步新快照格式（**格式改了不改这里 = 水质页实时静默失效，不报错**）
+- `Settings.vue`：新增「告警对外接入」面板（入站 Key/curl、出站 WS 在线数 + Webhook 订阅管理）
+- `Alarms.vue`：外部来源徽标（灰底，和"同帧 N 条"的主色徽标区分）
+
+### 17.3 事件契约（对外也按这个）
+
+```json
+{ "event": "alarm.created", "ts": "…+08:00",
+  "data": { "id": 460, "level": "danger", "rule_name": "…", "message": "…",
+            "source": "external", "origin": "DCS", "created_at": "…" } }
+```
+
+完整对接文档见 **`docs/alarm-integration.md`**（入站字段表、验签代码、错误码、当前限制）。
+
+### 17.4 验收（`qa_alarm_realtime.py`）
+
+| 项 | 结果 |
+|---|---|
+| WS 连接 | `live-hint connected`，显示「实时推送」 |
+| ingest → 页面出现 | **231ms**（多次跑 231~266ms） |
+| **没刷新页面** | 注入 `window.__probeMark` 全程存活（这是"真推送"与"轮询撞上了"的分水岭） |
+| 落库字段 | `source=external` / `origin=DCS` |
+| Webhook | 收到 `alarm.created`，`X-SuiEye-Signature` 存在 |
+| 鉴权 | 错误 Key → 401 |
+| 回归 | `qa_ds` 11 页 ALL PASS |
+
+### 17.5 三个坑
+
+1. **`init_db()` 从来没被调用过**。项目当初靠一次性脚本建表，之后新增的表/列在老库上永远不出现，
+   一查就 `no such table`。已在 `main.py` 的 startup 里调用（幂等）。
+2. **vite 代理 WebSocket 必须写 `ws: true`**，只写 `/ws` 的 target 只会转发普通 HTTP，不升级协议。
+3. **前端解析事件的地方必须跟着改**：`WaterMonitor` 里 `msg.type` → `msg.event`。
+   不改不报错、不白屏，只是数字不再变 —— 这类"静默失效"最难查，改格式时一定要 grep 全站消费点。
+
+### 17.6 遗留
+
+- Webhook 无重试队列（失败即丢），要可靠投递请用 WS
+- `_active_conns` 是进程内存，多副本部署需换 Redis Pub/Sub
+- `WS_TOKEN` 默认空 = 不鉴权，生产必须配
+- `equipment` / `safety` 两个 WS 端点保留但不再自己造数据（前端目前也没订阅）
+- 设备健康分仍是每请求重算（老 P0），与本次改动无关
+
 

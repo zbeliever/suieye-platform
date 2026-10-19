@@ -158,7 +158,130 @@ function modelMetric(m) {
   return parts.join(' · ')
 }
 
-onMounted(loadAll)
+// ══════════════════════════════════════════════════
+// 告警对外接入（2026-10-19）
+// ★ 这一块回答的是"你的告警能不能接别的软件"：
+//   入站给接口和钥匙，出站给订阅列表和投递状态。
+//   所有数字都来自后端真实接口 —— 不编"已连接 N 个系统"这种看着好看的空话。
+// ══════════════════════════════════════════════════
+const integration = ref({})
+const hooks = ref([])
+const newHookUrl = ref('')
+const newHookDesc = ref('')
+const hookSaving = ref(false)
+const hookTesting = ref(0)
+
+const wsOnline = computed(() => integration.value.ws_online?.alarms ?? 0)
+
+async function loadIntegration() {
+  try {
+    const [info, list] = await Promise.all([
+      api.get('/webhooks/integration'),
+      api.get('/webhooks'),
+    ])
+    integration.value = info || {}
+    hooks.value = list?.subscriptions || []
+  } catch (e) {
+    console.error('加载对外接入信息失败:', e)
+  }
+}
+
+/** 投递状态 → 圆角标签（只表达事实：正常 / 失败 / 还没推过 / 已停用） */
+function hookState(w) {
+  if (!w.enabled) return { cls: 'off', text: '已停用' }
+  if (!w.last_attempt_at) return { cls: 'idle', text: '等待首推' }
+  const ok = w.last_status >= 200 && w.last_status < 300
+  return ok
+    ? { cls: 'ok', text: `正常 ${w.last_status}` }
+    : { cls: 'bad', text: w.last_status ? `失败 ${w.last_status}` : '连接失败' }
+}
+
+async function addHook() {
+  const url = newHookUrl.value.trim()
+  if (!/^https?:\/\//.test(url)) {
+    ElMessage.warning('回调地址必须以 http:// 或 https:// 开头')
+    return
+  }
+  hookSaving.value = true
+  try {
+    const r = await api.post('/webhooks', {
+      url,
+      events: ['alarm.created'],
+      description: newHookDesc.value.trim(),
+    })
+    newHookUrl.value = ''
+    newHookDesc.value = ''
+    await loadIntegration()
+    // 密钥只在创建时返回一次，之后任何接口都拿不到 —— 必须当场提醒保存
+    await ElMessageBox.alert(
+      `<div style="word-break:break-all;font-family:var(--font-mono);font-size:12px;line-height:1.6">${r.secret}</div>
+       <div style="margin-top:8px;font-size:12px;color:#86909c">接收方用它验签：HMAC-SHA256(secret, 原始请求体) 与请求头 X-SuiEye-Signature 比对。</div>`,
+      '请保存签名密钥（只显示这一次）',
+      { dangerouslyUseHTMLString: true, confirmButtonText: '已保存' },
+    )
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '添加订阅失败')
+  } finally {
+    hookSaving.value = false
+  }
+}
+
+async function toggleHook(w, v) {
+  try {
+    await api.put(`/webhooks/${w.id}`, { enabled: v })
+    await loadIntegration()
+  } catch (e) {
+    ElMessage.error('切换状态失败')
+    await loadIntegration()
+  }
+}
+
+async function testHook(w) {
+  hookTesting.value = w.id
+  try {
+    const r = await api.post(`/webhooks/${w.id}/test`)
+    if (r.ok) ElMessage.success(`投递成功 · HTTP ${r.status} · ${r.elapsed_ms}ms`)
+    else ElMessage.error(`投递失败 · ${r.status || '无响应'}${r.error ? ' · ' + r.error : ''}`)
+    await loadIntegration()
+  } catch (e) {
+    ElMessage.error('测试请求失败')
+  } finally {
+    hookTesting.value = 0
+  }
+}
+
+async function removeHook(w) {
+  try {
+    await ElMessageBox.confirm(
+      `删除订阅 ${w.url}？删除后对方将不再收到任何告警推送。`,
+      '确认删除',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await api.delete(`/webhooks/${w.id}`)
+    await loadIntegration()
+    ElMessage.success('已删除')
+  } catch (e) {
+    ElMessage.error('删除失败')
+  }
+}
+
+function copyCurl() {
+  const text = integration.value.ingest_curl || ''
+  if (!text) return
+  navigator.clipboard?.writeText(text).then(
+    () => ElMessage.success('已复制，可直接粘到终端执行'),
+    () => ElMessage.warning('复制失败，请手动选中'),
+  )
+}
+
+onMounted(() => {
+  loadAll()
+  loadIntegration()
+})
 </script>
 
 <template>
@@ -328,6 +451,86 @@ onMounted(loadAll)
         </Panel>
       </el-col>
     </el-row>
+
+      <!-- ══════ 通栏：告警对外接入（2026-10-19） ══════
+           老板："告警系统要有实时性，也可以接入其他软件。"
+           实时性在 ws.py + Alarms.vue 里做完了，这块是"接入"的可见部分：
+           入站告诉别人怎么推进来，出站管理我们往哪推。 -->
+      <el-row :gutter="16">
+        <el-col :span="24">
+          <Panel title="告警对外接入" sub="入站收别家的告警 · 出站推给其他软件（数字全部来自真实接口）">
+            <!-- ── 入站 ── -->
+            <div class="int-block">
+              <div class="int-head">
+                <span class="int-title">入站 · 外部系统 → SuiEye</span>
+                <el-tag size="small" type="success" effect="plain">
+                  POST {{ integration.ingest_url || '/api/alarms/ingest' }}
+                </el-tag>
+                <el-tag v-if="integration.ingest_key_set" size="small" effect="plain">
+                  Key {{ integration.ingest_key_masked }}
+                </el-tag>
+                <el-tag v-else size="small" type="danger" effect="plain">未配置 Key</el-tag>
+              </div>
+              <pre class="int-pre">{{ integration.ingest_curl || '正在读取…' }}</pre>
+              <div class="int-actions">
+                <el-button size="small" @click="copyCurl">复制 curl 示例</el-button>
+                <span class="int-note">
+                  DCS / MES / 视频分析盒子带 <code>X-API-Key</code> 推过来，写库后立刻广播到告警页与门面
+                </span>
+              </div>
+            </div>
+
+            <!-- ── 出站 ── -->
+            <div class="int-block">
+              <div class="int-head">
+                <span class="int-title">出站 · SuiEye → 其他软件</span>
+                <el-tag size="small" effect="plain">WebSocket {{ integration.ws_url || '/ws/alarms' }}</el-tag>
+                <el-tag size="small" :type="wsOnline ? 'success' : 'info'" effect="plain">
+                  在线 {{ wsOnline }} 个连接
+                </el-tag>
+                <el-tag v-if="integration.ws_token_required" size="small" type="warning" effect="plain">
+                  需 token
+                </el-tag>
+              </div>
+
+              <div v-if="hooks.length" class="hook-list">
+                <div v-for="w in hooks" :key="w.id" class="hook-row">
+                  <span class="hook-state" :class="hookState(w).cls">{{ hookState(w).text }}</span>
+                  <div class="hook-main">
+                    <span class="hook-url mono">{{ w.url }}</span>
+                    <span class="hook-meta">
+                      {{ w.events.join(' / ') }}
+                      <template v-if="w.description"> · {{ w.description }}</template>
+                      <template v-if="w.ok_count || w.fail_count">
+                        · 成功 {{ w.ok_count }} / 失败 {{ w.fail_count }}
+                      </template>
+                    </span>
+                  </div>
+                  <el-button link size="small" :loading="hookTesting === w.id" @click="testHook(w)">测试</el-button>
+                  <el-switch :model-value="w.enabled" size="small" @change="(v) => toggleHook(w, v)" />
+                  <el-button link size="small" type="danger" @click="removeHook(w)">删除</el-button>
+                </div>
+              </div>
+              <div v-else class="hook-empty">
+                还没有订阅方 —— 告警目前只能在本系统内看到。
+              </div>
+
+              <div class="hook-add">
+                <el-input v-model="newHookUrl" size="small" class="hook-url-input"
+                  placeholder="https://your-mes.example.com/suieye/alarm" />
+                <el-input v-model="newHookDesc" size="small" class="hook-desc-input" placeholder="备注（选填）" />
+                <el-button size="small" type="primary" :loading="hookSaving" @click="addHook">
+                  添加订阅
+                </el-button>
+              </div>
+              <div class="int-note" style="margin-top: 8px;">
+                只支持 <code>http(s)://</code> 回调。钉钉/企业微信请填机器人 Webhook 地址；
+                接收方按 <code>X-SuiEye-Signature</code> 验签后可确认事件确实来自 SuiEye。
+              </div>
+            </div>
+          </Panel>
+        </el-col>
+      </el-row>
   </PageShell>
 </template>
 
@@ -385,4 +588,107 @@ onMounted(loadAll)
 
 .rule-actions { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
 .dirty-hint { font-size: var(--text-xs); color: var(--color-warning); }
+/* ---- 告警对外接入（2026-10-19） ---- */
+.int-block { padding: 2px 0 16px; }
+.int-block + .int-block {
+  border-top: 1px solid var(--border-1);
+  padding-top: 16px;
+  padding-bottom: 0;
+}
+.int-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.int-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.int-pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.int-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.int-note { font-size: var(--text-xs); color: var(--text-3); line-height: 1.6; }
+.int-note code {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.hook-list { display: flex; flex-direction: column; gap: 8px; }
+.hook-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+}
+.hook-state {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.hook-state.ok { color: var(--color-success); background: var(--color-success-light); }
+.hook-state.bad { color: var(--color-danger); background: var(--color-danger-light); }
+.hook-state.idle,
+.hook-state.off { color: var(--text-3); background: var(--bg-3); }
+
+.hook-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hook-url {
+  font-size: var(--text-xs);
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hook-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hook-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  border: 1px dashed var(--border-1);
+  border-radius: var(--radius);
+}
+.hook-add { display: flex; gap: 8px; margin-top: 10px; }
+.hook-url-input { flex: 1; }
+.hook-desc-input { width: 180px; }
 </style>

@@ -531,8 +531,11 @@ async function loadAll() {
 //    原先它写在 onMounted 的 `await loadAll()` 之后 → 注册时没有活跃组件实例，
 //    Vue 警告且 handler 永不清理（已卸载的页面仍被推送回调，泄漏）。
 useWebSocket('water', (msg) => {
-  if (msg.type !== 'snapshot') return
-  for (const s of msg.stations || []) {
+  // ★ 2026-10-19 事件格式统一为 { event, ts, data }（原来是 { type, stations, ts }）。
+  //   后端 ws.py 改了格式，这里必须同步，否则水质页的实时更新会静默失效
+  //   —— 不报错、不白屏，只是数字不再变，最难查。
+  if (msg.event !== 'snapshot') return
+  for (const s of msg.data?.stations || []) {
     const local = stations.value.find((x) => x.id === s.id)
     if (local) {
       local.status = s.status

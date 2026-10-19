@@ -10,6 +10,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
+import { useWebSocket } from '../api/ws'
 import PageShell from '../components/PageShell.vue'
 import StatCard from '../components/StatCard.vue'
 
@@ -97,6 +98,38 @@ const AUTO_REFRESH_MS = 30000
 const lastUpdate = ref('')
 let autoTimer = null
 const autoPaused = computed(() => checkedKeys.value.length > 0 || showBatchDialog.value)
+
+// ---- 实时推送（2026-10-19）----
+// ★ 改这个页面的原因：以前只有 30 秒轮询，分析刚产生的告警要等半分钟才出现；
+//   而屏幕上弹出来的却是后端随机编的假告警。现在真告警一产生就推过来，
+//   轮询降级成"WS 断开时的兜底"，不再承担主要更新职责。
+const pendingNew = ref(0)        // 处置中被压住的新告警条数（不打断用户操作）
+
+// ⚠️ useWebSocket 必须在 setup 同步阶段调用（内部注册 onUnmounted）
+const { status: alarmsWs } = useWebSocket('alarms', (msg) => {
+  if (msg.event !== 'alarm.created' && msg.event !== 'alarm.updated') return
+
+  // 处置中（有勾选 / 批量弹窗开着）绝不刷新：会清空勾选，把用户选到一半的操作吞掉
+  if (autoPaused.value) {
+    if (msg.event === 'alarm.created') pendingNew.value += 1
+    return
+  }
+  pendingNew.value = 0
+  loadGroups(true, { silent: true }).then(() => {
+    // 别人处置了「我正看着的这条」→ 右侧详情也得跟着变，
+    // 否则会出现"列表显示已闭环、右边还挂着待处理按钮"的分裂画面
+    if (msg.event === 'alarm.updated' && detail.value?.alarm?.id === msg.data?.id) {
+      const cur = groups.value.find((g) => g.group_key === selectedKey.value)
+      if (cur) selectGroup(cur)
+    }
+  })
+})
+
+/** 用户主动"查看新告警"：放弃当前处置上下文，重新拉一次列表 */
+function flushPending() {
+  pendingNew.value = 0
+  loadGroups(false)
+}
 
 // ---- 计算 ----
 const page = computed(() => Math.floor(filters.value.offset / filters.value.limit) + 1)
@@ -428,9 +461,20 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
     :sub="`${stats.total} 条告警聚合为 ${stats.events || 0} 个事件 · 严重 ${stats.danger} / 预警 ${stats.warning}`"
   >
     <template #actions>
+      <!-- 实时状态：WS 通了就别再让人盯着"30 秒轮询"那句话 -->
+      <span class="live-hint" :class="alarmsWs">
+        <i class="live-dot" />
+        <template v-if="alarmsWs === 'connected'">实时推送</template>
+        <template v-else>重连中 · 轮询兜底</template>
+      </span>
       <span class="auto-hint" :class="{ paused: autoPaused }">
-        <template v-if="autoPaused">自动刷新已暂停（处置中）</template>
-        <template v-else>自动刷新 30s<template v-if="lastUpdate"> · 最后更新 {{ lastUpdate }}</template></template>
+        <template v-if="autoPaused">
+          刷新已暂停（处置中）
+          <button v-if="pendingNew" class="pending-btn" @click="flushPending">
+            {{ pendingNew }} 条新告警
+          </button>
+        </template>
+        <template v-else-if="lastUpdate">最后更新 {{ lastUpdate }}</template>
       </span>
       <el-button size="small" :loading="loading" @click="loadGroups(true)">
         <el-icon><Refresh /></el-icon>&nbsp;刷新
@@ -534,6 +578,14 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
               <div class="ev-line1">
                 <span class="ev-level" :class="g.primary.level">{{ g.primary.level === 'danger' ? '严重' : '预警' }}</span>
                 <span class="ev-rule">{{ g.primary.rule_name }}</span>
+                <!-- ★ 2026-10-19：外部系统推来的告警必须标出是谁报的。
+                     接入 DCS / MES / 视频盒子之后，如果界面上所有告警长得一样，
+                     出了问题就说不清"这条到底是 SuiEye 算的还是别人推的"。 -->
+                <span
+                  v-if="g.primary.source === 'external'"
+                  class="ev-origin"
+                  :title="`外部系统推送：${g.primary.origin}`"
+                >{{ g.primary.origin }}</span>
                 <span v-if="g.count > 1" class="ev-count">同帧 {{ g.count }} 条</span>
                 <span class="ev-status" :style="{ color: statusMeta(g.status).color }">{{ statusMeta(g.status).label }}</span>
               </div>
@@ -573,6 +625,11 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
             <div class="dh-left">
               <span class="ev-level" :class="detail.alarm.level">{{ detail.alarm.level_label }}</span>
               <span class="dh-rule">{{ detail.alarm.rule_name }}</span>
+              <span
+                v-if="detail.alarm.source === 'external'"
+                class="ev-origin"
+                :title="`外部系统推送：${detail.alarm.origin}`"
+              >{{ detail.alarm.origin }}</span>
             </div>
             <span class="dh-status" :style="{ color: statusMeta(detail.alarm.status).color }">
               {{ detail.alarm.status_label }}
@@ -897,8 +954,41 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
 
 <style scoped>
 /* 页头/留白/返回入口由 PageShell 提供（2026-10-19 一致性整治） */
+/* ---- 实时状态 ---- */
+/* ★ 2026-10-19：从"自动刷新 30s"改成"实时推送" —— 数据来源从轮询计时器
+   换成了 WS 连接状态，用户该看到的是"通没通"，不是"还有几秒刷" */
+.live-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-4);
+  flex-shrink: 0;
+}
+.live-hint.connected { color: var(--text-2); }
+.live-hint.connected .live-dot { background: var(--color-success); }
+
 .auto-hint { font-size: var(--text-xs); color: var(--text-3); }
 .auto-hint.paused { color: var(--color-warning); }
+/* 处置中被压住的新告警：给一个可点的入口，别让用户以为"没有新告警" */
+.pending-btn {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.pending-btn:hover { background: var(--color-primary); color: var(--text-inverse); }
 
 /* ---- 筛选 ---- */
 .toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-2); }
@@ -970,6 +1060,21 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
 .ev-count {
   font-size: 11px; color: var(--color-primary); background: var(--color-primary-bg);
   padding: 0 5px; border-radius: var(--radius-sm); line-height: 16px;
+}
+/* 外部来源徽标：中性灰底，刻意和"同帧 N 条"的主色徽标区分开 ——
+   一个是"谁报的"，一个是"几条"，不该长得一样 */
+.ev-origin {
+  flex-shrink: 0;
+  max-width: 96px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ev-status { margin-left: auto; font-size: var(--text-xs); font-weight: var(--weight-medium); }
 .ev-msg {

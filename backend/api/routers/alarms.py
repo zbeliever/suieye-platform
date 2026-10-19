@@ -14,10 +14,10 @@ import json
 import os
 import os.path
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
@@ -226,12 +226,45 @@ def _alarm_dict(a: AlarmRecord) -> dict:
         "status": status,
         "status_label": _STATUS_LABELS.get(status, status),
         "group_key": a.group_key,
+        # ★ 来源必须一路带到接口层：前端要显示"这条是 DCS 推的"，
+        #   否则接入外部系统后，界面上所有告警长得一样，出了问题说不清是谁报的。
+        "source": a.source or "internal",
+        "origin": a.origin or "SuiEye",
         "handled_by": a.handled_by,
         "handled_at": a.handled_at.isoformat() if a.handled_at else None,
         "handled_note": a.handled_note,
         "action_taken": a.action_taken,
         "false_positive": bool(a.false_positive),
         "silenced_until": a.silenced_until.isoformat() if a.silenced_until else None,
+    }
+
+
+def _ws_payload(a: AlarmRecord) -> dict:
+    """WebSocket / Webhook 出站用的告警载荷（2026-10-19 新增）。
+
+    ★ 刻意比 `_alarm_dict` 轻：推送要表达的是"来了一条新告警"，
+      不是"把详情整包搬过去"。evidence 里的图像路径对外部系统没有意义，
+      接收方要详情按 id 拉 GET /api/alarms/{id} 即可。
+    ★ 但 source / origin 必须在：对方要能判断这条是 SuiEye 算的还是别家推的。
+    """
+    b = _brief(a)
+    status = a.status or ("acknowledged" if a.is_acknowledged else "new")
+    return {
+        "id": a.id,
+        "scene_id": a.scene_id,
+        "scene_label": b.get("scene_label"),
+        "level": a.level,
+        "level_label": _LEVEL_LABELS.get(a.level, a.level),
+        "rule_name": a.rule_name,
+        "message": a.message,
+        "metric": b.get("metric"),
+        "location": b.get("location"),
+        "status": status,
+        "status_label": _STATUS_LABELS.get(status, status),
+        "source": a.source or "internal",
+        "origin": a.origin or "SuiEye",
+        "group_key": a.group_key,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
     }
 
 
@@ -380,6 +413,108 @@ def _parse_status_filter(status: Optional[str]):
         if s not in _STATUS_LABELS:
             raise HTTPException(400, f"无效的处置状态: {s}")
     return items or None
+
+
+# ---------------------------------------------------------------------------
+# 入站：外部系统把告警推进来（2026-10-19 新增）
+# ---------------------------------------------------------------------------
+
+class AlarmIngestIn(BaseModel):
+    """外部系统推送的告警。字段刻意保持少而明确，对接方不用猜。"""
+    scene_id: str = "flotation"
+    level: str                                    # warning / danger
+    rule_name: str
+    message: str = ""
+    origin: str = "外部系统"                       # DCS / MES / 视频分析盒子 …
+    external_id: Optional[str] = None             # 对方系统内的唯一 id，用于重推去重
+    group_key: Optional[str] = None
+    created_at: Optional[str] = None              # ISO 时间；不传则用服务端收到的时间
+    evidence: Optional[dict] = None
+
+
+@router.post("/api/alarms/ingest")
+async def ingest_alarm(
+    body: AlarmIngestIn,
+    x_api_key: str = Header(default="", alias="X-API-Key"),
+    db: Session = Depends(get_db),
+):
+    """**外部系统 → SuiEye**：把别家的告警推进来。
+
+    ★ 这是"接入其他软件"的入站口。写库 + 立即广播，
+      告警页 / 门面在 1 秒内就能看到，不用等 30 秒轮询。
+    ★ 必须带 X-API-Key（config.ALARM_INGEST_KEY）：否则任何人都能往告警库里塞数据，
+      而告警库恰好是演示时最容易被质疑"是不是真的"的地方。
+    ★ 必须注册在 `/api/alarms/{alarm_id}` 之前 —— 虽然 GET/POST 方法不同不会真撞上，
+      但保持"固定路径在前"这个习惯，免得以后有人补一个 GET 版本时踩坑。
+    """
+    expected = (settings.ALARM_INGEST_KEY or "").strip()
+    if expected and x_api_key != expected:
+        raise HTTPException(status_code=401, detail="X-API-Key 无效")
+
+    level = (body.level or "").strip().lower()
+    if level not in ("warning", "danger"):
+        raise HTTPException(status_code=422, detail="level 只能是 warning 或 danger")
+
+    rule = (body.rule_name or "").strip()
+    if not rule:
+        raise HTTPException(status_code=422, detail="rule_name 不能为空")
+
+    origin = (body.origin or "外部系统").strip()[:50]
+
+    # 重推去重：外部系统遇网络抖动会重试，同一条告警不该在列表里出现两次
+    gk = body.group_key
+    if not gk and body.external_id:
+        gk = f"ext:{origin}:{body.external_id}"
+    if body.external_id and gk:
+        exist = (
+            db.query(AlarmRecord)
+            .filter(AlarmRecord.group_key == gk, AlarmRecord.source == "external")
+            .first()
+        )
+        if exist:
+            return {"ok": True, "id": exist.id, "duplicate": True, "broadcast": False}
+
+    # created_at：外部给的时间可能带时区，库里统一存 naive UTC
+    created = None
+    if body.created_at:
+        try:
+            dt = datetime.fromisoformat(body.created_at.replace("Z", "+00:00"))
+            created = dt.astimezone(timezone.utc).replace(tzinfo=None) if dt.tzinfo else dt
+        except ValueError:
+            raise HTTPException(status_code=422, detail="created_at 需为 ISO 8601 时间")
+
+    rec = AlarmRecord(
+        scene_id=(body.scene_id or "flotation").strip(),
+        level=level,
+        rule_name=rule[:100],
+        message=(body.message or "")[:2000],
+        evidence={
+            **(body.evidence or {}),
+            "ingest": {
+                "origin": origin,
+                "external_id": body.external_id,
+                "received_at": datetime.utcnow().isoformat(),
+            },
+        },
+        source="external",
+        origin=origin,
+        group_key=gk,
+    )
+    if created:
+        rec.created_at = created
+
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+    # 立即广播（WS + Webhook）。广播失败不能影响"已经入库"这个事实
+    from backend.api.routers.ws import publish_alarm
+    try:
+        await publish_alarm(_ws_payload(rec))
+    except Exception as e:
+        print(f"[ingest] 广播失败（记录已入库 id={rec.id}）: {e}")
+
+    return {"ok": True, "id": rec.id, "duplicate": False, "broadcast": True}
 
 
 # ---------------------------------------------------------------------------
@@ -759,6 +894,16 @@ def _do_handle(alarm: AlarmRecord, req: HandleRequest, db: Session) -> dict:
     ))
     db.commit()
     db.refresh(alarm)
+
+    # ---- 实时同步：A 窗口处置完，B 窗口立刻看到（2026-10-19）----
+    # ★ `_do_handle` 是同步函数（FastAPI 的 def 路由跑在线程池，不能 await），
+    #   所以走 publish_sync 把协程投递回主事件循环。
+    #   没有这一步，两个窗口之间要等 30 秒轮询才一致 —— 演示时"我这边点完了你那边还挂着"最尴尬。
+    try:
+        from backend.api.routers.ws import publish_sync
+        publish_sync("alarm.updated", _ws_payload(alarm))
+    except Exception as e:
+        print(f"[alarms] 状态变更广播失败 id={alarm.id}: {e}")
 
     return {
         "id": alarm.id,

@@ -149,8 +149,10 @@ async def analyze_image(
     db.flush()  # 先拿 record.id，供告警证据链引用
 
     # ---- 入库：告警记录 ----
+    # ★ 保留引用：commit 之后要靠它们广播（2026-10-19 实时推送改造）
+    new_alarms = []
     for alarm in ctx.alarms:
-        db.add(AlarmRecord(
+        rec = AlarmRecord(
             scene_id=scene_name,
             level=alarm["level"],
             rule_name=alarm["rule_name"],
@@ -162,10 +164,29 @@ async def analyze_image(
                 "metrics": ctx.metrics,
                 "record_id": record.id,
             },
-        ))
+            source="internal",
+            origin="SuiEye",
+        )
+        db.add(rec)
+        new_alarms.append(rec)
 
     db.commit()
     db.refresh(record)
+
+    # ---- 实时推送：新告警立刻出去 ----
+    # ★ 改造前：到这里就结束了。库里有记录，前端要等 30 秒轮询才看得到，
+    #   而屏幕上弹的却是 ws.py 随机编的假告警。现在真记录直接广播，
+    #   延迟从 30 秒降到毫秒级，且弹出来那条一定查得到。
+    if new_alarms:
+        from backend.api.routers.alarms import _ws_payload
+        from backend.api.routers.ws import publish_alarm
+        for rec in new_alarms:
+            try:
+                db.refresh(rec)          # 取回 id / created_at
+                await publish_alarm(_ws_payload(rec))
+            except Exception as e:
+                # 广播失败不能把"分析成功"变成失败：记录已经在库里了
+                print(f"[analyze] 告警广播失败 id={getattr(rec, 'id', None)}: {e}")
 
     # 模型员工档案：累计推理次数 +1
     mv = db.query(ModelVersion).filter(

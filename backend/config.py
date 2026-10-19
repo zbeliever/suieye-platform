@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     PB_GRADE_MIN: float = 3.0
     PB_GRADE_MAX: float = 8.0
 
+    # ── 告警对外接入（2026-10-19 老板：告警要能接入其他软件）──────────
+    # ★ 三个口子三把钥匙，各管各的：
+    #   · ALARM_INGEST_KEY —— 外部系统往 SuiEye **推**告警时校验（请求头 X-API-Key）
+    #   · WS_TOKEN         —— 外部系统**连** /ws/* 时校验（?token=），留空则不校验
+    #   · Webhook 签名密钥不回落到这里：它每个订阅一把，存在
+    #     webhook_subscriptions.secret，撤一个订阅不影响别的接收方
+    # 演示版给了默认值，方便一条 curl 就跑通；上线前必须改掉。
+    ALARM_INGEST_KEY: str = "suieye-ingest-demo-key"
+    WS_TOKEN: str = ""
+    WEBHOOK_TIMEOUT: float = 5.0
+    WEBHOOK_KEEP_DELIVERIES: int = 200   # 投递流水只留最近 N 条，防止无限膨胀
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
