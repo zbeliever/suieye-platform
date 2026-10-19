@@ -2,12 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
-    // ★ 2026-10-17：首页改为 3D 设备监测中心（点工艺流程进对应功能）
-    //   直播墙降级为 /livewall —— 它不是被删掉，仍可从侧栏与导航进入。
+    // ★ 2026-10-19：首页从「设备监测中心」升格为**全站门面**（数字孪生导览屏）。
+    //   它不再只是一张设备图，而是：品牌页头 + 全厂 KPI + 3D 厂区 + 功能入口。
+    //   组件名仍是 Equipment3D.vue（内部 3D 逻辑全部复用），但页面定位已经变了。
     path: '/',
     name: 'home3d',
     component: () => import('../views/Equipment3D.vue'),
-    meta: { title: '智能工厂总览' },
+    meta: { title: '淬眸 SuiEye · 铅锌浮选数字孪生' },
   },
   {
     path: '/livewall',

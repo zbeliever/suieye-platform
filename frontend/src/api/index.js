@@ -9,6 +9,11 @@ const api = axios.create({
 // 请求计数器（用于 loading 管理）
 let pendingRequests = 0
 
+// 网络错误提示节流：同一文案 5 秒内只弹一次（并发请求不会连弹多条）
+const NET_ERR_THROTTLE_MS = 5000
+let lastNetErrAt = 0
+let lastNetErrMsg = ''
+
 api.interceptors.request.use(
   (config) => {
     pendingRequests++
@@ -29,9 +34,21 @@ api.interceptors.response.use(
     pendingRequests--
 
     // 网络错误 / 超时 / 后端未启动
+    //
+    // ★★ 必须节流去重（2026-10-19 门面化后）：
+    //   门面页一进来就并发打 /scenes/flotation/stats、/scenes/flotation/records、
+    //   /water/overview、/equipment 等四五个接口。后端没起时，
+    //   上面每条都走一次 `!err.response` → **连弹 4~5 条一模一样的红条**，
+    //   把整块屏幕糊住，观感是"页面崩了"。而真实信息只有一句：后端没起来。
+    //   做法：同一个提示文案 5 秒内只弹一次；期间后续的同类错误只 reject，不弹。
     if (!err.response) {
       const msg = err.code === 'ECONNABORTED' ? '请求超时，请稍后重试' : '网络连接失败，请检查后端服务是否启动'
-      ElMessage({ type: 'error', message: msg, duration: 5000 })
+      const now = Date.now()
+      if (now - lastNetErrAt > NET_ERR_THROTTLE_MS || lastNetErrMsg !== msg) {
+        lastNetErrAt = now
+        lastNetErrMsg = msg
+        ElMessage({ type: 'error', message: msg, duration: 5000 })
+      }
       return Promise.reject(err)
     }
 

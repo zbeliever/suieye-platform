@@ -140,17 +140,8 @@ const selectedRoute = computed(() => {
   return id ? routeFor(id) : null
 })
 
-/** 右下设备清单折叠状态（默认收起：3D 画面才是主角） */
-const equipDockOpen = ref(false)
-
-/** 设备清单距底距离 = 操作日志实际高度 + 间距。
- *  不能写死数值：日志面板高度随视口自适应（max-height:40vh），写死会在矮屏压住日志、
- *  在高屏留出一道空缝。这里实测后回填，随 ResizeObserver 一起更新。 */
-const dockBottom = ref('206px')
-
-/** 日志显示条数：随视口高度收敛，矮屏只留 5 条，别让辅信息吃掉 3D 主体面积 */
+/** 视口高度（窄屏/矮屏分支用；日志条数与清单定位的那两个状态已随浮层一并移除） */
 const viewH = ref(window.innerHeight)
-const logRows = computed(() => (viewH.value < 820 ? 5 : viewH.value < 960 ? 7 : 8))
 
 /** 每段的聚合工况（给 3D 上方的段位条用） */
 const segmentStats = computed(() => {
@@ -349,8 +340,154 @@ const isLoading = ref(true)
 /** 3D 场景初始化失败时的错误文案（为空表示正常） */
 const sceneError = ref('')
 let refreshTimer = null
-let dockObserver = null   // 监听操作日志高度变化 → 同步设备清单位置
 const REFRESH_INTERVAL = 5000 // 5 秒刷新一次
+
+// ══════════════════════════════════════════════════════════════════
+// 门面指标（Plant KPI）—— 2026-10-19 老板拍板：本页从「设备监测中心」
+// 升格为**全站门面 / 数字孪生导览屏**。门面要回答的是"这座厂现在怎么样"，
+// 而不是"1#浮选槽健康度多少"。所以顶部指标换成了工艺线与全厂的四个数。
+//
+// ★ 口径纪律（对"数据假"零容忍）：
+//   ① 每个数都写明**来源接口**与**时间口径**，绝不编造；
+//   ② 品位分两个概念，不能混：
+//      · 「最新分析」= 最近一条记录的单次预测值（单点、波动大）
+//      · 「N 天均值」= 历史记录的均值（代表工艺水平）
+//      实测两者差得很远（最新 1.79% vs 0-10月均值 5.23%），
+//      门面只看单点会被误读成"全厂品位 1.79%"，所以**主位显示均值、副位显示最新**。
+//   ③ 任一接口失败只让对应那一格显示「—」，不塞 0（0 是有效业务值，会误导）。
+// ══════════════════════════════════════════════════════════════════
+const plantKpi = ref({
+  pbMean: null,        // Pb 平均品位 %（/api/scenes/flotation/stats → grade_distribution.mean）
+  pbLatest: null,      // Pb 最新一次分析 %（records?limit=1）
+  znLatest: null,      // Zn 最新一次分析 %
+  gradeCount: null,    // 参与统计的分析条数
+  gradeFrom: '',       // 统计时间范围起点（YYYY-MM）
+  gradeTo: '',
+  reuseScore: null,    // 回用水质评分（/api/water/overview → avg_reuse_score）
+  waterStations: null, // 水质点位数
+  waterAbnormal: null, // 异常点位数
+  avgHealth: null,     // 设备平均健康度（equipment stats: avg_health）
+  attention: null,     // 需关注台数 = warning + danger
+  inService: null,     // 在役台数（status != stopped，故障/预警仍算在役）
+  total: null,
+})
+const kpiReady = ref(false)
+
+/** 拉门面指标。三个接口互不依赖，用 allSettled 并发 —— 任何一个挂了都不能拖垮门面。 */
+async function fetchPlantKpi() {
+  const [gradeRes, waterRes] = await Promise.allSettled([
+    // ① 浮选品位：stats 拿均值与时间范围，records 拿最新一次
+    Promise.all([
+      api.get('/scenes/flotation/stats'),
+      api.get('/scenes/flotation/records', { params: { limit: 1 } }),
+    ]),
+    // ② 回用水质总览
+    api.get('/water/overview'),
+  ])
+
+  const next = { ...plantKpi.value }
+
+  // ── ① 品位 ──
+  if (gradeRes.status === 'fulfilled') {
+    const [stats, recs] = gradeRes.value
+    const dist = stats?.grade_distribution || {}
+    next.pbMean = dist.mean != null ? dist.mean : null
+    next.gradeCount = dist.count != null ? dist.count : (stats?.total_records ?? null)
+    const dr = stats?.date_range || {}
+    next.gradeFrom = dr.from ? String(dr.from).slice(0, 7) : ''
+    next.gradeTo = dr.to ? String(dr.to).slice(0, 7) : ''
+
+    // 最新一条：prediction 里两个字段都试，缺了宁可留空
+    const rec = recs?.records?.[0]
+    const pred = rec?.prediction || {}
+    const pb = pred.pb_grade_xrf ?? pred.pb_grade
+    const zn = pred.zn_grade_xrf ?? pred.zn_grade
+    next.pbLatest = pb != null && isFinite(Number(pb)) ? Number(pb) : null
+    next.znLatest = zn != null && isFinite(Number(zn)) ? Number(zn) : null
+  }
+
+  // ── ② 水质 ──
+  if (waterRes.status === 'fulfilled') {
+    const w = waterRes.value || {}
+    next.reuseScore = w.avg_reuse_score ?? null
+    next.waterStations = w.station_count ?? null
+    next.waterAbnormal = w.abnormal_count ?? null
+  }
+
+  plantKpi.value = next
+  kpiReady.value = true
+}
+
+/**
+ * 设备格要的是**健康度**，不是"在役率"。
+ *
+ * ★ 2026-10-19 修正 —— 第一版这里显示的是「设备在役率 = in_service / total」，
+ *   实测恒为 100%（10/10），因为后端 `in_service = status != "stopped"`：
+ *   **故障和预警的设备仍在役**，它们只是健康度低。
+ *   于是门面出现自相矛盾的画面：KPI 写着"100% 在役"，紧挨着的结论条写着
+ *   "1 台设备故障 2 台设备预警" —— 访客第一反应就是"这数据是假的"。
+ *   问题不在后端（后端语义没错），在于**这个指标放在门面上没有信息量**：
+ *   它几乎永远是 100%，读者只会理解成"全厂安好"。
+ *   改成 avg_health（真实差异指标，实测 80~81 波动），
+ *   副行再补"A / B 台在役"，把"有没有停机"这件事实话实说地带上，
+ *   但不让它当主角。
+ */
+function applyRunRate() {
+  const s = equipmentStats.value || {}
+  const total = s.total || 0
+  if (!total) return
+  plantKpi.value = {
+    ...plantKpi.value,
+    total,
+    inService: s.in_service ?? null,
+    avgHealth: s.avg_health ?? null,
+    attention: (s.warning || 0) + (s.danger || 0),
+  }
+}
+
+/** 数字格式化（门面统一两位/一位，避免各格小数位不一致） */
+const fmt1 = (v) => (v == null || !isFinite(v) ? '—' : Number(v).toFixed(1))
+const fmt2 = (v) => (v == null || !isFinite(v) ? '—' : Number(v).toFixed(2))
+
+/**
+ * 全厂结论条 —— 门面的"一句话"。
+ *
+ * ★ 为什么需要它：四个 KPI 各自是数字，但访客看完仍然不知道"现在好不好"。
+ *   结论条把这四个数**归并成一个判断**，并给出最值得关注的那一条。
+ *
+ * ★ 口径：判断规则全部来自真实字段，不引入任何编造的"综合评分"：
+ *   · 设备有 danger（故障）→ 最高优先级，因为直接影响产能
+ *   · 品位最新值明显低于历史均值 → 工艺波动，提示关注
+ *   · 水质有 danger/异常点位 → 环保相关，单独提示
+ *   · 都不触发 → 正常
+ */
+const plantVerdict = computed(() => {
+  const s = equipmentStats.value || {}
+  const k = plantKpi.value
+  const notes = []
+
+  if (s.danger > 0) {
+    notes.push({ level: 'danger', text: `${s.danger} 台设备故障` })
+  }
+  if (s.warning > 0) {
+    notes.push({ level: 'warn', text: `${s.warning} 台设备预警` })
+  }
+  // 品位偏离：最新一次显著低于历史均值（< 85%）才算异常，避免正常波动被放大
+  if (k.pbLatest != null && k.pbMean != null && k.pbMean > 0 && k.pbLatest < k.pbMean * 0.85) {
+    notes.push({ level: 'warn', text: `最新品位低于均值 ${Math.round((1 - k.pbLatest / k.pbMean) * 100)}%` })
+  }
+  if (k.waterAbnormal > 0) {
+    notes.push({ level: 'warn', text: `水质 ${k.waterAbnormal} 处异常` })
+  }
+
+  const bad = notes.filter(n => n.level === 'danger').length
+  const level = bad ? 'danger' : (notes.length ? 'warn' : 'ok')
+  const head = level === 'ok' ? '全厂运行正常' : (level === 'danger' ? '有设备故障需处理' : '整体正常 · 需关注个别项')
+
+  return { level, head, notes: notes.slice(0, 3) }
+})
+
+
 
 /**
  * 设备是否"已停机" —— 启停按钮文案 / 按钮色 / 实际动作 / 停机暂停转动 的**唯一权威判定**。
@@ -375,6 +512,7 @@ async function fetchEquipmentData() {
       equipments.value = data.equipment
       equipIndex = new Map(data.equipment.map(e => [e.id, e]))
       equipmentStats.value = data.stats || {}
+      applyRunRate()        // 在役率随设备刷新同步（门面第 4 格）
       lastUpdateTime.value = new Date().toLocaleTimeString()
 
       if (isFirstLoad && scene) {
@@ -877,7 +1015,10 @@ function refreshStats() {
   }
 }
 
-/** 操作日志：统一从后端拉（启停 / 报修 / 维护 / 工单流转都已落库，刷新不丢） */
+/** 操作日志：统一从后端拉（启停 / 报修 / 维护 / 工单流转都已落库，刷新不丢）
+ *  ★ 2026-10-19：门面页已移除「操作日志」浮层（属于运维台特征）。
+ *    这里保留拉取，因为 addLog() 的调用点散布在启停/报修/维护等动作里，
+ *    它们仍需要一个"记录已落库"的动线；数据只进内存，不再渲染。 */
 async function refreshLogs() {
   try {
     const data = await api.get('/equipment/all/logs?limit=12')
@@ -887,8 +1028,6 @@ async function refreshLogs() {
       operator: x.operator,
       type: x.type,
     }))
-    // 日志面板到这一刻才渲染出来 → 重新对齐设备清单高度
-    nextTick(syncDockBottom)
   } catch (e) {
     // 拉取失败时保留现有列表
   }
@@ -917,14 +1056,23 @@ const STATUS_COLORS = {
   stopped: { base: 0x9e9e9e, emissive: 0x424242 },   // 灰色
   danger:  { base: 0xf44336, emissive: 0xb71c1c },   // 红色
 }
-// ── 深色工业场景配色（3D 视口自成一套世界观，与浅色 UI 形成对比而非冲突）──
-const SKY_TOP = 0x0c1420        // 天顶（近黑，压住画面头部）
-const SKY_HORIZON = 0x2b4258    // 地平线（冷青灰，给空间一个"远"）
-const FLOOR_COLOR = 0x171d26    // 地面（比天空略亮一点点，让设备轮廓浮起来）
-const GRID_COLOR = 0x2c3a4b     // 网格主线
-const GRID_SUB = 0x1f2937       // 网格副线
-const STRUCTURE_COLOR = 0x607d8b
-const FOG_COLOR = 0x121a24      // 雾色 = 地平线附近色，远处自然淡出
+// ── 浅色沙盘配色（2026-10-19 老板拍板：本页升格为全站门面）
+//
+// ★ 为什么从"深色工业夜视"改成"浅色沙盘"：
+//   旧配色（天顶近黑 + 深灰地板 + 强辉光）是**中控室监视器**的语言，
+//   它把页面变成了"运维台的画面"。而门面要像**展台上的模型** ——
+//   背景退后、设备成为唯一主体，光从上方来，阴影落在浅色地坪上。
+//   改成浅色后，设备的黄色/橙色铭牌、绿色液面、状态标签才真正跳出来。
+//
+// ⚠️ 只改这一组常量，不改任何设备材质 —— 设备配色是按"深色底"调的，
+//   如果连设备一起提亮，反而会糊成一片（黄色铭牌在浅底上仍可读，这是验证过的）。
+const SKY_TOP = 0xf2f5f9        // 天顶：极浅冷灰蓝（退后，不压画面）
+const SKY_HORIZON = 0xdde5ee    // 地平线：比天顶略沉，给出"远处"
+const FLOOR_COLOR = 0xffffff    // 地面（实际颜色由 makeGroundTexture 的渐变决定）
+const GRID_COLOR = 0xc2ccd9     // 网格主线（浅灰蓝，像图纸网格）
+const GRID_SUB = 0xdde4ec       // 网格副线
+const STRUCTURE_COLOR = 0x8fa0b3
+const FOG_COLOR = 0xe6ecf3      // 雾色 = 浅地平线色，远处自然溶进背景
 
 /** ★ 厂区布局（视图层参数，不是业务数据）
  *  原布局 7 台设备挤在 ±6 的方圆内：定位环互相重叠、边缘标签被裁、没有纵深。
@@ -2189,17 +2337,22 @@ function createEquipmentModel(equip) {
 //  环境美术 —— 天空 / 地面 / 微尘（画面质感来源）
 // ══════════════════════════════════════════════════
 
-/** 地面贴图：径向渐变，中心略亮、边缘沉入暗部（把视觉重心压在厂区上） */
+/** 地面贴图：径向渐变。
+ *  浅色沙盘版——中心是浅冷灰（不是纯白！），向边缘过渡到更浅的冷灰蓝并淡出。
+ *  ★ 为什么中心不能是纯白（第一版踩过）：
+ *    地面 #ffffff + 设备外壳也是浅灰白 → 设备**溶进地面**，只剩标签悬浮着，
+ *    看起来像"模型没加载出来"。地面必须比设备外壳暗一档，设备才有边界。
+ *    这也符合真实展台：底座比展品暗。 */
 function makeGroundTexture() {
   const size = 1024
   const c = document.createElement('canvas')
   c.width = c.height = size
   const ctx = c.getContext('2d')
   const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.04, size / 2, size / 2, size * 0.52)
-  g.addColorStop(0.0, '#28313d')
-  g.addColorStop(0.38, '#1a222c')
-  g.addColorStop(0.72, '#111721')
-  g.addColorStop(1.0, '#080c12')
+  g.addColorStop(0.0, '#c6d0dc')   // 中心：浅冷灰（比设备外壳暗一档）
+  g.addColorStop(0.38, '#d5dee8')
+  g.addColorStop(0.72, '#e4ebf2')
+  g.addColorStop(1.0, '#eef2f7')   // 边缘反而更亮 → 远处淡出，视线自然收回中心
   ctx.fillStyle = g
   ctx.fillRect(0, 0, size, size)
   const tex = new THREE.CanvasTexture(c)
@@ -2236,11 +2389,10 @@ function createSkyDome() {
         float h = normalize(vWorldPos + vec3(0.0, offset, 0.0)).y;
         float t = pow(max(h, 0.0), exponent);
         vec3 col = mix(horizonColor, topColor, t);
-        // 地平线辉光：地平线附近一条柔和亮带，给空间一个"远方"
+        // 地平线辉光：浅色版改成"更亮的一点白"而不是冷蓝光带 ——
+        // 深色版靠发光制造远方，浅色版靠"亮得几乎看不见"制造远方。
         float glow = exp(-pow((h - 0.015) * 7.0, 2.0));
-        col += vec3(0.05, 0.072, 0.098) * glow;
-        // 天顶极淡的冷光，避免上半死黑
-        col += vec3(0.012, 0.02, 0.036) * pow(max(h, 0.0), 0.5);
+        col += vec3(0.035, 0.04, 0.045) * glow;
         gl_FragColor = vec4(col, 1.0);
       }`,
   })
@@ -2262,8 +2414,10 @@ function createAmbientDust() {
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(arr, 3))
   const mat = new THREE.PointsMaterial({
-    color: 0x9fd8ff, size: 0.08, transparent: true, opacity: 0.3,
-    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
+    // 浅底上不能用"加色混合的淡蓝"——那在白色背景里几乎不可见且发灰脏。
+    // 改成正常混合的中性灰点，像空气里的细尘，退到画面最底层。
+    color: 0xaab6c4, size: 0.08, transparent: true, opacity: 0.22,
+    depthWrite: false, sizeAttenuation: true,
   })
   const pts = new THREE.Points(geo, mat)
   pts.name = 'ambientDust'
@@ -2359,15 +2513,21 @@ function initScene() {
   // controls 就绪后按当前宽高比再校一次机位（相机先于 controls 创建，那时算不了 target）
   fitHomeDistance()
 
-  // ── 光照系统：半球光/环境光压低 → 靠主光塑造明暗面，金属才有"体积"；
-  //    主光偏暖打侧上，冷暖对冲（补光偏蓝）让灰调设备不再糊成一团 ──
-  const hemi = new THREE.HemisphereLight(0x9dc4e8, 0x0d1319, 0.58)
+  // ── 光照系统（浅色沙盘版）──
+  // ★ 换浅底之后必须重调 —— 这里踩过一次：第一版照搬深色版的光强，
+  //   结果"浅灰地面 + 强半球光"把整体亮度顶到过曝，设备全变成白色剪影，
+  //   绿色液面和黄色铭牌的对比全丢了（截图确认，不是玄学）。
+  //   修法不是把地面调暗，而是**光的总量压下来**，让明暗关系重新建立：
+  //   · 半球光 0.72 → 0.38：浅色地面本身就在反弹光，光少了反而层次更清楚；
+  //   · 环境光 0.18 → 0.10：同上；
+  //   · 主光保持偏暖 1.10：它是唯一的"造型光"，负责让设备有受光面/背光面。
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xc8d4e2, 0.38)
   scene.add(hemi)
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.26)
+  const ambient = new THREE.AmbientLight(0xffffff, 0.10)
   scene.add(ambient)
 
-  const mainLight = new THREE.DirectionalLight(0xfff6ea, 1.65)
+  const mainLight = new THREE.DirectionalLight(0xfff6ea, 1.10)
   mainLight.position.set(19, 25, 13)
   mainLight.castShadow = true
   // 1024 足够：画面有雾 + bloom，且阴影是柔和软影，2048 的锐度看不出来却贵一倍
@@ -2383,7 +2543,7 @@ function initScene() {
   mainLight.shadow.normalBias = 0.02
   scene.add(mainLight)
 
-  const fillLight = new THREE.DirectionalLight(0x7fb2ff, 0.42)
+  const fillLight = new THREE.DirectionalLight(0x7fb2ff, 0.22)
   fillLight.position.set(-14, 12, -9)
   scene.add(fillLight)
 
@@ -2422,13 +2582,16 @@ function initScene() {
   scene.add(ambientDust)
 
   // ── 后期处理：UnrealBloom 只让高亮体（定位环 / 状态灯 / 液面 / 流体粒子）发光 ──
+  // ★ 浅色沙盘下调（0.24/0.46/0.98 → 0.16/0.34/1.02）：
+  //   深底上 bloom 是"从黑里浮出来"的加分项；浅底上同样的强度会让
+  //   白色墙面和浅色地面一起泛光，画面发雾、设备边缘糊掉。
   composer = new EffectComposer(renderer)
   composer.addPass(new RenderPass(scene, camera))
   bloomPass = new UnrealBloomPass(
     bloomVector(w, h),   // 半分辨率：bloom 本身就是模糊结果，降到一半看不出差别，但填充率省 4 倍
-    0.24,   // strength：辉光强度（只做"提亮边缘"，不做出光晕）
-    0.46,   // radius：扩散半径
-    0.98    // threshold：再抬高一点，挡掉"大平面镜面高光"被误放大成光斑
+    0.16,   // strength：辉光强度（只做"提亮边缘"，不做出光晕）
+    0.34,   // radius：扩散半径
+    1.02    // threshold：抬高阈值，只让真正的自发光体（状态灯/液面）溢出
   )
   composer.addPass(bloomPass)
   composer.addPass(new OutputPass())
@@ -3733,14 +3896,22 @@ let hotFacilityTimer = null
 
 // ── 厂区导览浮层：收起状态存 localStorage ──────────
 /**
- * ★ 为什么默认展开：这是唯一"能按车间找功能"的入口，收起会让新用户失去方向。
- *   但演示时想露全厂区，一键收起后**刷新仍保持收起**——所以必须持久化。
- * ★ key 带版本号：以后浮层布局大改时改 key，老状态自动失效，
- *   避免用户升级后看到一个"自己从没关过、却是收起状态"的页面。
+ * ★ 为什么默认**收起**（2026-10-19 门面化后改）：
+ *   旧版默认展开的理由是"这是唯一能按车间找功能的入口，收起会让用户失去方向"——
+ *   那是**运维台**的理由：用户进来是为了找某个功能。
+ *   门面反过来：用户进来是为了**看这座厂**，导览只是"想深入时的目录"。
+ *   实测 1440×900 下展开态高 620px，把整个左侧厂区（磨矿段那半边）遮住了，
+ *   角落工单入口也被压住 —— 目录盖住了展品，本末倒置。
+ *   所以默认只留一条 36px 标题条，点开才展开（展开态仍持久化，演示时不会反复弹回）。
+ * ★ key 带版本号：.v1 → .v2 是为了让老板本地存过的"展开"状态失效，
+ *   否则升级后仍看到展开态，"默认收起"根本不会生效。
  */
-const GUIDE_KEY = 'suieye.eq3d.guideCollapsed.v1'
-const guideCollapsed = ref(false)
-try { guideCollapsed.value = localStorage.getItem(GUIDE_KEY) === '1' } catch { /* 无痕模式 */ }
+const GUIDE_KEY = 'suieye.eq3d.guideCollapsed.v2'
+const guideCollapsed = ref(true)
+try {
+  const saved = localStorage.getItem(GUIDE_KEY)
+  if (saved !== null) guideCollapsed.value = saved === '1'
+} catch { /* 无痕模式 */ }
 
 function toggleGuide() {
   guideCollapsed.value = !guideCollapsed.value
@@ -4247,46 +4418,18 @@ onMounted(() => {
   sceneReady.value = true
   pendingSegQuery = route.query.seg || null
 
-  // 设备清单贴住操作日志上沿（日志高度随视口自适应，必须实测而非写死）
-  nextTick(() => {
-    syncDockBottom()
-    if (window.ResizeObserver) {
-      dockObserver = new ResizeObserver(syncDockBottom)
-      // 日志面板可能还没渲染，轮询到它出现再挂观察者
-      const tryObserve = (left = 12) => {
-        const logEl = document.querySelector('.op-log-panel')
-        if (logEl) dockObserver.observe(logEl)
-        else if (left > 0) setTimeout(() => tryObserve(left - 1), 400)
-      }
-      tryObserve()
-    }
-  })
+  // ★ 2026-10-19：设备清单浮层与「贴住操作日志上沿」的 ResizeObserver 已整块移除
+  //   （门面页不再有这两个浮层）。原来这里 nextTick 里挂 dockObserver 的逻辑一并删掉，
+  //   否则会去 observe 一个不存在的 .op-log-panel。
+  //
+  // 门面指标：与设备数据并发拉取（别串行 —— 品位/水质和设备接口互不依赖）
+  fetchPlantKpi()
 })
-
-/** 实测操作日志面板高度 → 把设备清单顶到它上方。
- *  ★★ 两个坑（都靠实测数值才暴露，肉眼看截图分辨不出来）：
- *   1) 选择器范围：`.op-log-panel` 挂在 `.main-layout` 下，**不在 `.viewport` 里**。
- *      早期写成 canvasContainer.querySelector(...) 永远查不到 → 一直回落 12px → 压住日志。
- *      这里改用整页查询。
- *   2) 时序：日志面板是 v-if="operationLogs.length" 渲染的，首帧还不存在。
- *      必须轮询等它出现再测，否则同样回落成 12px。 */
-let dockRetry = 0
-function syncDockBottom() {
-  const logEl = document.querySelector('.op-log-panel')
-  if (!logEl) {
-    dockBottom.value = '12px'
-    if (dockRetry < 10) { dockRetry += 1; setTimeout(syncDockBottom, 400) }
-    return
-  }
-  dockRetry = 0
-  dockBottom.value = `${Math.round(logEl.getBoundingClientRect().height) + 22}px`
-}
 
 onBeforeUnmount(() => {
   if (animationId) cancelAnimationFrame(animationId)
   if (refreshTimer) clearInterval(refreshTimer)
   window.removeEventListener('resize', onResize)
-  if (dockObserver) { dockObserver.disconnect(); dockObserver = null }
   if (canvasContainer.value) {
     canvasContainer.value.removeEventListener('click', onMouseClick)
     canvasContainer.value.removeEventListener('dblclick', onCanvasDblClick)
@@ -4306,7 +4449,6 @@ onBeforeUnmount(() => {
 
 function onResize() {
   viewH.value = window.innerHeight
-  syncDockBottom()
   if (!canvasContainer.value || !camera || !renderer || !labelRenderer) return
   const w = canvasContainer.value.clientWidth
   const h = canvasContainer.value.clientHeight
@@ -4346,12 +4488,44 @@ const HOME_ASPECT = 1408 / 979           // 1920 下 3D 视口的宽高比
 const FIT_MIN_SCALE = 1.08
 
 /**
+ * 宽屏拉近的下限倍率（< 1 表示比基准更近）。
+ * ★ 这个值只能靠截图定，不能靠算：
+ *   第一版取 0.72，理论上是 sqrt(1.44/2.37)≈0.78 的保守版，1880×900 截图看着"铺满了"，
+ *   但 1920×1080 截图暴露出**厂房顶部钢架被页头切掉**、配电室贴住右缘 ——
+ *   因为 aspect 只反映视口形状，反映不了"厂房在画面里的垂直高度"。
+ *   0.86 是在 1920/1440/1024 三个尺寸上逐张看过截图的取值：
+ *   钢架不再被页头切掉、配电室留边，同时模型仍撑住画面主体。
+ */
+const WIDE_MIN_SCALE = 0.86
+
+/**
  * 按当前相机宽高比算出「首屏 / 复位」的落点。
  * ★ 复位也走这里 —— 否则窄屏复位回的是 1920 的机位，配电室又滑出画面。
+ *
+ * ★★ 2026-10-19 补「宽屏收回」——门面化之前只有后撤、没有拉近，宽屏全浪费：
+ *    旧逻辑 `k = HOME_ASPECT / aspect`，只有 aspect < 基准时才 > 1（后撤）。
+ *    而 aspect > 基准（宽屏）时 k < 1，又被 `Math.max(k, FIT_MIN_SCALE)` 顶到 1.08，
+ *    **永远退到 1.08 倍**。门面化把页头+结论条加上去之后，3D 视口被压扁：
+ *    实测 1920 视口 1898×802（aspect 2.37）、1440 是 1418×648（2.19），
+ *    而基准 HOME_ASPECT 只有 1.44 —— 相机不动，横向多出来的视野全是空白，
+ *    厂房缩在画面正中 585×259px，左右各空 741/572px，门面像"图没加载完"。
+ *
+ *    修法：aspect 超出基准时按**开方**比例拉近（不是线性）。
+ *    线性会在超宽屏上过冲，把厂房顶出上下边界；
+ *    开方让"拉近"比"后撤"更保守 —— 宁可少占一点，也不能裁掉配电室。
+ *    实际下限由 WIDE_MIN_SCALE 钳住（见上）。
  */
 function HOME_POS() {
-  const k = (camera && camera.aspect < HOME_ASPECT) ? HOME_ASPECT / camera.aspect : 1
-  const dist = HOME_DIST * Math.min(Math.max(k, FIT_MIN_SCALE), 1.55)
+  const aspect = camera ? camera.aspect : HOME_ASPECT
+  let k = 1
+  if (aspect < HOME_ASPECT) {
+    // 窄屏：后撤，保证配电室（东北角）不被挤出右边界
+    k = HOME_ASPECT / aspect
+  } else if (aspect > HOME_ASPECT) {
+    // 宽屏：拉近，把多出来的横向视野换成模型尺寸
+    k = Math.sqrt(HOME_ASPECT / aspect)
+  }
+  const dist = HOME_DIST * Math.min(Math.max(k, WIDE_MIN_SCALE), 1.55)
   return HOME_DIR.clone().normalize().multiplyScalar(dist).add(HOME_AIM)
 }
 
@@ -4396,58 +4570,96 @@ function healthColor(h) {
 
 <template>
   <div class="equipment-page">
-    <!-- ══ 顶部工具栏 ══ -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <h2 class="page-title">
-          <span class="icon"></span> 设备监测中心
-        </h2>
-        <div class="stat-chips">
-          <!-- 四档 = 后端 status 字段的完整取值域。别写成"运行/预警/故障/停机"：
-               warning/danger 的设备**也在运行**，叫"运行"会让同一行自相矛盾 -->
-          <el-tag :type="'success'" effect="dark" size="small">
-            正常 {{ stats.running }}/{{ stats.total }}
-          </el-tag>
-          <el-tag v-if="stats.warning" type="warning" effect="dark" size="small">
-            预警 {{ stats.warning }}
-          </el-tag>
-          <el-tag v-if="stats.danger" type="danger" effect="dark" size="small">
-            故障 {{ stats.danger }}
-          </el-tag>
-          <!-- 停机是一档独立状态：不加这一条，"运行+预警+故障"会凑不齐总数，看起来像丢设备 -->
-          <el-tag v-if="stats.stopped" type="info" effect="dark" size="small">
-            停机 {{ stats.stopped }}
-          </el-tag>
-          <el-tag effect="plain" size="small">均健康 {{ stats.avg_health ?? '—' }}%</el-tag>
-          <span class="refresh-hint" v-if="lastUpdateTime">
-            {{ lastUpdateTime }}
-          </span>
+    <!-- ════════════════════════════════════════════════════════════
+         门面页头（2026-10-19 老板拍板：本页从「设备监测中心」改成
+         全站门面 / 数字孪生导览屏）
+
+         ★ 设计取舍 —— 为什么砍成这样：
+           旧页头是"设备管理"语汇：正常7/10、预警1、故障1、停机1、均健康79%，
+           再挂上报修工单、标签/自转/静音/复位四个调试开关。
+           那是**运维台**的开场白，不是门面的开场白。
+           门面要一句话说清"这座厂此刻怎么样"，所以：
+             · 左边 = 品牌 + 一句话定位（淬眸 SuiEye · 铅锌浮选数字孪生）
+             · 中间 = 四个工艺/全厂指标（品位均值 / 最新分析品位 / 回用水质 / 在役率）
+             · 右边 = 只留"进入监控"这一个去处的入口，调试开关全部移除
+         ★ 设备健康度没有丢：它仍在右侧「数字孪生同步」HUD 里按工况分档显示。
+    ════════════════════════════════════════════════════════════ -->
+    <header class="facade-head">
+      <div class="fh-brand">
+        <span class="fh-mark" aria-hidden="true"></span>
+        <div class="fh-names">
+          <h1 class="fh-title">淬眸 SuiEye</h1>
+          <p class="fh-sub">铅锌浮选数字孪生 · 全流程在线监测</p>
         </div>
       </div>
-      <div class="toolbar-right">
-        <el-badge :value="pendingOrderCount" :hidden="!pendingOrderCount" :offset="[-4, 4]" class="order-badge">
-          <el-button size="small" type="primary" plain @click="openOrderCenter">
-            报修工单
-          </el-button>
-        </el-badge>
-        <el-button-group>
-          <el-button :type="showLabels ? 'primary' : ''" size="small" @click="showLabels = !showLabels">
-            标签
-          </el-button>
-          <el-button
-            :type="autoRotate ? 'primary' : ''"
-            size="small"
-            title="镜头绕当前轴心旋转：未选中设备时绕厂区中心，选中某台设备时绕那台设备"
-            @click="autoRotate = !autoRotate"
-          >
-            自转
-          </el-button>
-          <el-button :type="alarmSoundEnabled ? 'primary' : ''" size="small" @click="alarmSoundEnabled = !alarmSoundEnabled">
-            {{ alarmSoundEnabled ? '告警音' : '静音' }}
-          </el-button>
-          <el-button size="small" @click="resetCamera">复位</el-button>
-        </el-button-group>
+
+      <!-- 门面 KPI：每一格都标注口径，避免"把单次预测当全厂品位"的误读 -->
+      <div class="fh-kpis">
+        <div class="fh-kpi is-primary">
+          <span class="fk-label">Pb 品位均值</span>
+          <span class="fk-value">{{ fmt2(plantKpi.pbMean) }}<em>%</em></span>
+          <span class="fk-foot" v-if="plantKpi.gradeCount">
+            {{ plantKpi.gradeCount.toLocaleString() }} 次分析
+            <template v-if="plantKpi.gradeFrom">· {{ plantKpi.gradeFrom }}~{{ plantKpi.gradeTo }}</template>
+          </span>
+          <span class="fk-foot" v-else>暂无记录</span>
+        </div>
+
+        <div class="fh-kpi">
+          <span class="fk-label">最新一次分析</span>
+          <span class="fk-value">{{ fmt2(plantKpi.pbLatest) }}<em>%</em></span>
+          <span class="fk-foot">Pb · Zn {{ fmt2(plantKpi.znLatest) }}%</span>
+        </div>
+
+        <div class="fh-kpi">
+          <span class="fk-label">回用水质</span>
+          <span class="fk-value">{{ fmt1(plantKpi.reuseScore) }}<em>分</em></span>
+          <span class="fk-foot" v-if="plantKpi.waterStations != null">
+            {{ plantKpi.waterStations }} 个点位
+            <template v-if="plantKpi.waterAbnormal">· {{ plantKpi.waterAbnormal }} 处异常</template>
+            <template v-else>· 全部达标</template>
+          </span>
+          <span class="fk-foot" v-else>暂无数据</span>
+        </div>
+
+        <!-- ★ 这一格是「健康度」而不是「在役率」：
+             在役率恒为 100%（故障/预警的设备也在役），放在门面上没有信息量，
+             还会和结论条"1 台设备故障"直接打架。健康度才是真实差异指标。
+             副行把在役台数如实写出来，但不占主位。 -->
+        <div class="fh-kpi">
+          <span class="fk-label">设备健康度</span>
+          <span class="fk-value">{{ fmt1(plantKpi.avgHealth) }}<em>分</em></span>
+          <span class="fk-foot" v-if="plantKpi.total">
+            {{ plantKpi.inService ?? '—' }} / {{ plantKpi.total }} 台在役
+            <template v-if="plantKpi.attention">· {{ plantKpi.attention }} 台需关注</template>
+          </span>
+          <span class="fk-foot" v-else>正在接入</span>
+        </div>
       </div>
+
+      <!-- 门面只留一个去处。原来这里还有 报修工单/标签/自转/静音/复位 —— 那是调试工具，
+           门面不该出现；需要它们时进 /monitor 或 /dashboard，各自都有。 -->
+      <div class="fh-actions">
+        <router-link to="/monitor" class="fh-cta">
+          <span>进入实时监控</span>
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </router-link>
+      </div>
+    </header>
+
+    <!-- ══ 全厂结论条 ══
+         ★ 门面的"一句话"：四个 KPI 是数字，这一条把它们归并成判断，
+           并点出最值得注意的那一两项。访客不用自己比对数字就知道"现在好不好"。 -->
+    <div class="verdict-bar" :class="`is-${plantVerdict.level}`" v-if="kpiReady">
+      <span class="vb-dot" aria-hidden="true"></span>
+      <strong class="vb-head">{{ plantVerdict.head }}</strong>
+      <span class="vb-sep" v-if="plantVerdict.notes.length" aria-hidden="true"></span>
+      <span v-for="(n, i) in plantVerdict.notes" :key="i" class="vb-note" :class="`is-${n.level}`">
+        {{ n.text }}
+      </span>
     </div>
 
     <!-- ══ 主内容区 ══
@@ -4762,48 +4974,28 @@ function healthColor(h) {
           </div>
         </transition>
 
-        <!-- 设备列表（右下折叠）：3D 里找一台具体设备时仍需要清单，
-             但它是辅助工具，不该占用左侧黄金位置 -->
-        <div class="equip-dock" :class="{ 'is-open': equipDockOpen }" :style="{ bottom: dockBottom }">
-          <button class="dock-toggle" @click="equipDockOpen = !equipDockOpen">
-            <el-icon><component :is="equipDockOpen ? 'ArrowDown' : 'ArrowUp'" /></el-icon>
-            <span>设备清单</span>
-            <!-- ★ 这里原来还有个 {{ equipments.length }} 徽标（=10），
-                 而顶部状态条已写着「正常 6/10」—— 同一屏同一个数字出现两遍，
-                 正是老板明确禁止的"同一数字反复出现"。清单本身就是全量列表，
-                 条数不提供任何新信息，直接去掉。 -->
-          </button>
-          <div v-show="equipDockOpen" class="dock-list">
-            <div
-              v-for="(eq, idx) in equipments"
-              :key="eq.id"
-              class="dock-card"
-              :class="{ active: selectedEquipment?.id === eq.id, hovered: hoveredId === eq.id }"
-              @click="focusEquipment(eq.id)"
-            >
-              <i class="card-status-dot" :class="`dot-${eq.status}`"></i>
-              <span class="dock-idx">{{ String(idx + 1).padStart(2, '0') }}</span>
-              <span class="dock-name">{{ eq.name }}</span>
-              <span class="dock-health" :style="{ color: healthColor(eq.health) }">{{ eq.health }}%</span>
-            </div>
-          </div>
-        </div>
-
         <!-- 视图提示 -->
         <div class="view-hint">
           拖拽旋转 · 滚轮缩放 · 单击设备看详情 · 双击设备进功能 · 点左侧工艺段飞向机位
         </div>
-      </div>
 
-      <!-- 右下角操作日志 -->
-      <div class="op-log-panel" v-if="operationLogs.length">
-        <div class="log-header">操作日志</div>
-        <div class="log-list">
-          <div v-for="(log, idx) in operationLogs.slice(0, logRows)" :key="idx" class="log-item" :class="`log-${log.type}`">
-            <span class="log-time">{{ log.time }}</span>
-            <span class="log-action">{{ log.action }}</span>
-          </div>
-        </div>
+        <!-- ══ 角落小入口：报修工单 ══
+             ★ 2026-10-19 老板拍板「留个小入口藏在角落」。
+               它是**运维动作**，不该出现在门面的主视觉动线上；但演示时又需要
+               能从门面走完一次完整闭环（发现异常 → 报修 → 工单流转），
+               所以保留成一个低存在感的角落图标，不占任何版面权重。
+               有未闭环工单时才带一枚角标（数字来自 /api/repairs/stats）。 -->
+        <button
+          class="corner-orders"
+          :class="{ 'has-badge': pendingOrderCount > 0 }"
+          type="button"
+          title="报修工单中心"
+          @click="openOrderCenter"
+        >
+          <el-icon><Tools /></el-icon>
+          <span class="co-text">工单</span>
+          <span class="co-badge" v-if="pendingOrderCount > 0">{{ pendingOrderCount }}</span>
+        </button>
       </div>
     </div>
 
@@ -5126,40 +5318,185 @@ const typeNames = {
   gap: 0;
 }
 
-/* ── 工具栏 ── */
-.toolbar {
+/* ── 门面页头 ──
+   ★ 与旧 .toolbar 的本质差别：旧的是"工具栏"（左边标题+标签、右边一排按钮），
+     新的是"厂牌 + 全厂仪表"——左侧品牌块承担"这是什么"，中间四格承担"现在怎样"，
+     右侧只留一个去处。视觉上也从"一条工具条"变成"一块页头"（更高的留白、分隔线）。 */
+.facade-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
+  gap: 28px;
+  padding: 0 20px 0 4px;
   margin-bottom: 12px;
+  flex-shrink: 0;
+  min-width: 0;
 }
-.toolbar-left { display: flex; align-items: center; gap: 16px; min-width: 0; }
-.page-title {
-  margin: 0; font-size: 18px; font-weight: 700; color: #1a1a2e;
-  display: flex; align-items: center; gap: 6px;
-  flex-shrink: 0;          /* 标题永不被压缩 */
-  white-space: nowrap;
-}
-/* ★ 徽标必须 flex-shrink:0：
-   左栏是 flex 容器，右侧工具栏先占位后，徽标会被压到 min-content ——
-   el-tag 内部是 flex 盒子，压到极限后中文会**逐字换行**，再被圆角裁掉，
-   画面上就成了「▮▮▮▮ 3 停 1」这种残片（1440 下实测）。 */
-.stat-chips {
+.fh-brand {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 10px;
   flex-shrink: 0;
 }
-.stat-chips :deep(.el-tag) { white-space: nowrap; }
-.refresh-hint {
-  font-size: 11px;
-  color: #aaa;
-  margin-left: 4px;
+/* 品牌标记：抽象几何（两条相交斜纹），不用图标字体也不放 emoji */
+.fh-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background:
+    linear-gradient(135deg, #165dff 0%, #165dff 46%, transparent 46%, transparent 54%, #4b8bff 54%, #4b8bff 100%);
+  box-shadow: 0 2px 8px rgba(22, 93, 255, 0.28);
+  flex-shrink: 0;
 }
+.fh-names { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fh-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #1a1a2e;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.fh-sub {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #8a94a6;
+  white-space: nowrap;
+}
+
+/* 四格 KPI：等宽分栏（个数已知 → 用 repeat(4, ...)，避免 auto-fill 造出孤立格） */
+.fh-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+  border-left: 1px solid #e8ebf0;
+}
+.fh-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 18px;
+  min-width: 0;
+  border-right: 1px solid #eef1f5;
+}
+.fh-kpi:last-child { border-right: none; }
+.fk-label {
+  font-size: 11px;
+  color: #8a94a6;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.fk-value {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #1a1a2e;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* 主角那一格（Pb 均值）用品牌色点出来，其余保持墨色 —— 一屏只有一个主角 */
+.fh-kpi.is-primary .fk-value { color: #165dff; }
+.fk-value em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 1px;
+  color: #8a94a6;
+}
+.fk-foot {
+  font-size: 10.5px;
+  color: #a2abb9;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 右侧唯一去处 */
+.fh-actions { flex-shrink: 0; }.fh-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  background: #165dff;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, transform 0.15s;
+}
+.fh-cta:hover { background: #0e4fd8; }
+.fh-cta:hover svg { transform: translateX(2px); }
+.fh-cta svg { transition: transform 0.15s; }
+
+/* ── 全厂结论条 ──
+   形态：一条极薄的横条，紧贴页头下沿。它不是"告警横幅"（那种红色通栏会显得出事故），
+   而是一条**状态摘要**：灰底 + 左侧一枚状态点。只有真的出故障才转红。 */
+.verdict-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: #f7f9fb;
+  border: 1px solid var(--border-1);
+  font-size: 12px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.vb-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #00b42a;
+  flex-shrink: 0;
+}
+.verdict-bar.is-warn { background: #fffbf3; border-color: #ffe4bf; }
+.verdict-bar.is-warn .vb-dot { background: #ff7d00; }
+.verdict-bar.is-danger { background: #fff5f3; border-color: #ffd3cc; }
+.verdict-bar.is-danger .vb-dot { background: #f53f3f; }
+.vb-head { font-weight: 600; color: var(--text-1); white-space: nowrap; }
+.vb-sep {
+  width: 1px; height: 11px;
+  background: var(--border-1);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+.vb-note {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.vb-note.is-warn { color: #c05621; }
+.vb-note.is-danger { color: #d92f2f; font-weight: 500; }
+/* 多条之间用细分隔点，别用逗号（中文逗号在这类短摘要里会被误读成句子结束） */
+.vb-note + .vb-note::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--text-4, #c9cdd4);
+}
+
+/* 窄屏（≤1200）：页头换成两行，KPI 独占一行，避免四格被挤成竖排 */
+@media (max-width: 1200px) {
+  .facade-head { flex-wrap: wrap; gap: 10px 20px; padding: 8px 16px 0; }
+  .fh-kpis {
+    order: 3;
+    flex-basis: 100%;
+    border-left: none;
+    border-top: 1px solid #e8ebf0;
+    padding-top: 8px;
+  }
+  .fh-kpi:first-child { padding-left: 0; }
+  .fh-actions { margin-left: auto; }
+  .verdict-bar { margin: 8px 16px 10px; flex-wrap: wrap; }
+}
+
+/* ── 旧工具栏样式（.toolbar/.stat-chips/.page-title）已随「设备监测中心」页头一并移除。
+      保留 .refresh-hint 之外的选择器只会让人以为还有对应 DOM，故整段删除。 ── */
 
 /* ── 主布局 ── */
 .main-layout {
@@ -5455,90 +5792,26 @@ const typeNames = {
   50% { opacity: 0.5; transform: scale(1.3); }
 }
 
-/* ── 右下设备清单（折叠）──
-   ⚠️ 必须落在操作日志面板（.op-log-panel，bottom:12 right:12 宽 260）的**上方**。
-      两者都靠右下，早期版本 bottom:14 直接压住日志文字，日志被遮掉大半行。
-      这里用 bottom:206 抬到日志实际高度（约 196）之上，并右对齐到同一列。 */
-.equip-dock {
-  position: absolute;
-  right: 12px;
-  bottom: 206px;
-  width: 260px;
-  background: rgba(20, 24, 31, 0.88);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 6px;
-  overflow: hidden;
-  backdrop-filter: blur(6px);
-  z-index: 13;
-  /* ★ 展开时整体高度受视口约束，超出的部分由 .dock-list 自己滚 ——
-     否则 10 台设备会把面板顶到视口之外，连折叠按钮都点不到（收不回去）。 */
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100% - 226px);
-}
-.dock-toggle {
-  flex-shrink: 0;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  background: none;
-  border: none;
-  color: #cfd8e3;
-  font-size: 12px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.dock-toggle:hover { background: rgba(255,255,255,0.06); }
-.dock-toggle span { flex: 1; text-align: left; }
-.dock-toggle em {
-  font-style: normal;
-  font-size: 11px;
-  color: #94a3b4;
-  background: rgba(255,255,255,0.08);
-  padding: 0 5px;
-  border-radius: 8px;
-}
-.dock-list {
-  flex: 1;
-  min-height: 0;          /* ★ flex 子项必须给 0，否则 overflow 不生效 */
-  max-height: 232px;
-  overflow-y: auto;
-  padding: 4px;
-  border-top: 1px solid rgba(255,255,255,0.08);
-}
-.dock-card {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 7px;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background 0.16s;
-}
-.dock-card:hover { background: rgba(255,255,255,0.08); }
-.dock-card.active { background: rgba(22,93,255,0.28); }
-.dock-idx {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 10px;
-  color: #7d8b9c;
-}
-.dock-name { flex: 1; font-size: 12px; color: #dbe3ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dock-health { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* ── 设备清单 / 操作日志 两块右下浮层已移除（2026-10-19 门面化），
+      对应样式一并删除，避免留下没有 DOM 的死规则。 ── */
 
 /* ── 3D 视口 ── */
 .viewport {
   flex: 1;
   position: relative;
-  background: #1a1d23;
+  /* ★ 底色跟天空球地平线同色系（浅灰蓝）。留着 #1a1d23 会在
+     天空球尚未渲染的首帧闪一下黑屏，且圆角描边处透出暗边。 */
+  background: #e9eff6;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--shadow-lg);
 }
 .viewport canvas { display: block; width: 100% !important; height: 100% !important; }
 
-/* ── 数字孪生 HUD ── */
+/* ── 数字孪生 HUD（浅色版）──
+   ★ 深色版是一块 rgba(20,24,31,.74) 的"黑玻璃"，压在浅色沙盘上像贴了块污渍。
+      浅色沙盘里它应该像一张**仪表小标签**：白底、细边、数据用墨色，
+      只有状态色（绿/橙/红）保留饱和度 —— 一屏只让状态色出声。 */
 .twin-hud {
   position: absolute;
   top: 14px;
@@ -5547,12 +5820,13 @@ const typeNames = {
      让给导览卡是合理的 —— 导览是"去哪"，HUD 是"现在怎么样"，后者更适合贴边。 */
   right: 14px;
   min-width: 252px;
-  background: rgba(20, 24, 31, 0.74);
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   padding: 10px 12px 11px;
-  color: #e8ecf2;
+  color: var(--text-1);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.07);
   z-index: 8;
   pointer-events: none;
 }
@@ -5562,9 +5836,10 @@ const typeNames = {
   gap: 6px;
   padding-bottom: 8px;
   margin-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  border-bottom: 1px solid var(--border-1);
   font-size: 12px;
   font-weight: 600;
+  color: var(--text-1);
 }
 .hud-live {
   width: 7px; height: 7px; border-radius: 50%;
@@ -5580,7 +5855,7 @@ const typeNames = {
   margin-left: auto;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-3);
 }
 .hud-row {
   display: flex;
@@ -5589,17 +5864,18 @@ const typeNames = {
   font-size: 11px;
   line-height: 1.95;
 }
-.hud-k { width: 58px; flex-shrink: 0; color: rgba(255, 255, 255, 0.48); }
-.hud-v { color: rgba(255, 255, 255, 0.88); }
-.hud-v b { font-weight: 700; }
-.hv-run { color: #4fd15c; }
-.hv-warn { color: #ffa83d; }
-.hv-bad { color: #ff6b6b; }
-.hv-off { color: #b6c2cf; }
+.hud-k { width: 58px; flex-shrink: 0; color: var(--text-3); }
+.hud-v { color: var(--text-2); }
+.hud-v b { font-weight: 700; color: var(--text-1); }
+/* 状态色在白底上必须加深一档，否则 #4fd15c 这类"深底亮色"在白色上看不见 */
+.hv-run { color: #009a29 !important; }
+.hv-warn { color: #d96a00 !important; }
+.hv-bad { color: #d92f2f !important; }
+.hv-off { color: #86909c !important; }
 .hud-scale { display: flex; align-items: center; }
 .hud-scale em {
   font-style: normal;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--text-3);
   margin: 0 8px 0 4px;
 }
 .hud-scale em:last-child { margin-right: 0; }
@@ -5612,10 +5888,11 @@ const typeNames = {
 .detail-panel {
   position: absolute;
   top: 16px;
-  /* ★ 右边界必须让开右下角两件浮层（设备清单 + 操作日志，都右对齐 right:12 宽 260）：
-     早期 right:16 让详情面板与它们**完全重叠**，选中设备时三块面板叠成一团看不清。
-     这里右移 284px（= 260 宽 + 12 边距 + 12 间隙），详情面板独占右侧「内列」。 */
-  right: 284px;
+  /* ★ 2026-10-19：右移量从 284px 收回 16px。
+     那个 284 是为了让开右下角的「设备清单 + 操作日志」两块浮层（各 260 宽）——
+     两块浮层已随门面化移除，继续右移只会让详情面板离开屏幕右缘、压到厂区正中。
+     ⚠️ 若将来重新加回右侧浮层，这个值必须同步加回去。 */
+  right: 16px;
   width: 300px;
   background: rgba(255,255,255,0.96);
   backdrop-filter: blur(12px);
@@ -5793,11 +6070,77 @@ const typeNames = {
   left: 50%;
   transform: translateX(-50%);
   font-size: 12px;
-  color: rgba(255,255,255,0.4);
-  background: rgba(0,0,0,0.3);
+  /* ★ 浅色沙盘版：黑底白字在这屏里像块污渍（深色版是对的做法）。
+     改成"几乎看不见的浅色药丸"，只在需要时被注意到 —— 它是提示，不是内容。 */
+  color: var(--text-3);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--border-1);
   padding: 4px 14px;
   border-radius: 8px;
   pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ── 角落工单入口 ──
+   ★ 设计意图：它是门面上唯一的「运维动作」，必须比任何内容都轻。
+     所以用**白底 + 浅边 + 次级文字色**，没有阴影、没有主题色填充；
+     只有 hover 时才浮起来一点点。有未闭环工单才在右上角挂一枚红角标。
+   ★ 位置：右下角（2026-10-19 第二次修正）。
+     第一版放左下角 left:16px，实测被「厂区导览」卡压住 ——
+     导览卡展开态高 620px（1440），底边到 748，而工单在 722~750，重叠 26px。
+     那本来就是导览卡的领地：它是浮在视口左上角、纵向拉到底的目录。
+     右下角才是真空的：详情面板在**右上**（top:16px right:16px），
+     视图提示在底部居中，右下这条窄带没有任何常驻元素。
+   ⚠️ 若详情面板将来改到右下，本入口需同步让位。 */
+.corner-orders {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.16s, border-color 0.16s, color 0.16s;
+}
+.corner-orders:hover {
+  /* 默认态已有颜色，hover 只加深 —— 不引入新色相 */
+  background: #fff;
+  border-color: #c3cedb;
+  color: var(--text-1);
+}
+.corner-orders .el-icon {
+  font-size: 13px;
+  /* 图标比文字更淡，进一步压低存在感 */
+  color: var(--text-3);
+  transition: color 0.16s;
+}
+.corner-orders:hover .el-icon { color: var(--text-2); }
+.co-text { letter-spacing: 0.02em; }
+.co-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  color: #fff;
+  background: #f53f3f;
+  border-radius: 8px;
 }
 
 /* ── 过渡动画 ── */
@@ -5812,58 +6155,7 @@ const typeNames = {
 .card-danger { border-left: 3px solid #f53f3f; }
 .card-stopped { border-left: 3px solid #9e9e9e; }
 
-/* ── 操作日志面板 ── */
-.op-log-panel {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  width: 260px;
-  background: rgba(255,255,255,0.95);
-  border-radius: 6px;
-  box-shadow: var(--shadow-md);
-  overflow: hidden;
-  z-index: 10;
-  /* ★ 高度必须受视口约束：768 高度下 8 条日志 = 215px，
-     会从小尺寸的 3D 视图里挖掉近 1/3 的面积（那才是页面主体）。
-     这里按剩余空间自适应，矮屏自然只显示 6 条。 */
-  display: flex;
-  flex-direction: column;
-  max-height: min(40vh, 196px);
-}
-.log-header {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #1d2129;
-  background: #f7f8fa;
-  border-bottom: 1px solid #eee;
-}
-.log-list {
-  flex: 1;
-  min-height: 0;          /* ★ flex 子项归零，否则 max-height 拦不住内容 */
-  overflow-y: auto;
-}
-.log-item {
-  display: flex; gap: 8px;
-  padding: 5px 12px;
-  font-size: 11px;
-  border-bottom: 1px solid #f2f3f5;
-}
-.log-time { color: #999; white-space: nowrap; font-family: monospace; }
-.log-action {
-  color: #4f5b66;
-  /* 长动作名（"工单 WO-… 开始维修（待处理 → 维修中）"）最多两行，
-     否则一条就撑出 60px，把面板顶到三行就满 */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.4;
-}
-.log-success .log-action { color: #00b42a; font-weight: 500; }
-.log-warning .log-action { color: #ff7d00; font-weight: 500; }
-.log-danger .log-action { color: #f53f3f; font-weight: 500; }
+/* ── 操作日志面板样式已删除（浮层移除） ── */
 
 /* ── 详情操作按钮组 ── */
 .detail-actions {
