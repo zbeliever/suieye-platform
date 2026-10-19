@@ -1,21 +1,38 @@
 <template>
-  <div class="dosing">
-    <!-- 顶栏 -->
-    <BackToFactory class="page-back" />
-    <header class="ds-header">
-      <div class="header-left">
-        <el-icon :size="28" color="#165dff"><MagicStick /></el-icon>
-        <div>
-          <h1>配药助手</h1>
-          <p class="sub">基于选矿专家规则的药剂配方推荐系统</p>
-        </div>
-      </div>
-      <div class="header-right">
-        <el-tag :type="result ? 'success' : 'info'" size="small" effect="light">
-          {{ result ? '推荐就绪' : '等待输入' }}
-        </el-tag>
-      </div>
-    </header>
+  <PageShell title="配药助手" sub="基于选矿专家规则的药剂配方推荐系统">
+    <template #actions>
+      <el-tag :type="result ? 'success' : 'info'" size="small" effect="light">
+        {{ result ? '推荐就绪' : '等待输入' }}
+      </el-tag>
+    </template>
+
+    <!-- 四格 KPI：全部取自已加载的真实字段（本次工况 + 输出 + 历史），不新造指标 -->
+    <template #kpi>
+      <StatCard
+        label="推荐药剂"
+        :value="result ? result.reagents.length : '—'"
+        :unit="result ? '种' : ''"
+        :tone="result ? 'primary' : 'default'"
+        :foot="result ? confidenceLabel(result.confidence) : '尚未生成配方'"
+      />
+      <StatCard
+        label="目标铅品位"
+        :value="Number(form.target_pb_grade).toFixed(1)"
+        unit="%"
+        :foot="`目标锌 ${Number(form.target_zn_grade).toFixed(1)}%`"
+      />
+      <StatCard
+        label="矿浆 pH"
+        :value="Number(form.current_ph).toFixed(1)"
+        :foot="`该矿种最优 ${optimalPh}`"
+      />
+      <StatCard
+        label="历史方案"
+        :value="history.total"
+        unit="条"
+        :foot="`已载入最近 ${history.records.length} 条`"
+      />
+    </template>
 
     <div class="ds-body">
       <!-- 左侧：输入面板 -->
@@ -228,7 +245,7 @@
       <section class="panel result-panel empty-state" v-else>
         <el-empty description="填写左侧工况参数，点击生成配药方案">
           <template #image>
-            <el-icon :size="64" color="#c9cdd4"><MagicStick /></el-icon>
+            <el-icon :size="64" color="var(--text-4)"><MagicStick /></el-icon>
           </template>
           <template #description>
             <p>系统将基于选矿专家规则，输出完整的药剂配方推荐</p>
@@ -289,12 +306,12 @@
 
     <!-- 反馈弹窗 -->
     <el-dialog v-model="showFeedback" title="方案反馈" width="400px" center>
-      <p style="color:#86909c; text-align:center; margin-bottom:16px">此配药方案的实际效果如何？</p>
+      <p style="color:var(--text-3); text-align:center; margin-bottom:16px">此配药方案的实际效果如何？</p>
       <div style="text-align:center; font-size:32px; margin-bottom:20px">
         <span
           v-for="s in 5" :key="s"
-          style="cursor:pointer; color:#e5e6eb; transition:color 0.2s"
-          :style="{ color: feedbackScore >= s ? '#ff7d00' : '#e5e6eb' }"
+          style="cursor:pointer; color:var(--border-1); transition:color 0.2s"
+          :style="{ color: feedbackScore >= s ? 'var(--color-warning)' : 'var(--border-1)' }"
           @click="feedbackScore = s"
         >&#9733;</span>
       </div>
@@ -303,7 +320,7 @@
         <el-button type="primary" @click="submitFeedback">提交</el-button>
       </template>
     </el-dialog>
-  </div>
+  </PageShell>
 </template>
 
 <script setup>
@@ -312,7 +329,8 @@ import { useRoute } from 'vue-router'
 import { MagicStick, EditPen, Cpu } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 const route = useRoute()
 const loading = ref(false)
@@ -349,6 +367,9 @@ const form = ref({
 const optimalPh = computed(() => {
   return config.value.ore_types[form.value.ore_type]?.optimal_ph || 10.5
 })
+
+/** 置信度 → 中文（KPI 副行与结果卡共用同一套文案，避免一处写"高置信度"、一处写"高"） */
+const confidenceLabel = (c) => (c === 'high' ? '高置信度' : c === 'medium' ? '中置信度' : (c ? '需验证' : '—'))
 
 onMounted(async () => {
   try { config.value = await api.get('/dosing/config') } catch {}
@@ -482,32 +503,10 @@ function getTagType(typeStr) {
 </script>
 
 <style scoped>
-.dosing {
-  min-height: 100vh;
-  background: #f0f2f5;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 12px 20px 10px;
-}
-
-/* Header */
-.ds-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 24px;
-  background: #fff;
-  border: 1px solid #e5e6eb;
-  border-radius: 8px;
-}
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.ds-header h1 { margin: 0; font-size: 18px; font-weight: 600; }
-.sub { margin: 2px 0 0; font-size: 12px; color: #86909c; }
+/* ★ 2026-10-19 一致性整治：页面骨架/留白/页头交给 PageShell，
+   原来的 .dosing 根容器 + .ds-header 自绘页头已删除（本页曾 0 处使用令牌）。
+   这里只保留"内容区纵向节奏"和面板样式。 */
+:deep(.page-body) { gap: 16px; }
 
 /* Body layout */
 .ds-body {
@@ -519,17 +518,17 @@ function getTagType(typeStr) {
   .ds-body { grid-template-columns: 1fr; }
 }
 
-/* Panel */
+/* Panel —— 与 components/Panel.vue 同一套令牌（本页结构较老，暂不换组件） */
 .panel {
-  background: #fff;
-  border: 1px solid #e5e6eb;
-  border-radius: 8px;
-  padding: 20px 24px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-1);
+  border-radius: var(--panel-radius);
+  padding: var(--panel-pad-y) var(--panel-pad-x);
 }
 .panel-title {
-  margin: 0 0 20px;
-  font-size: 15px;
-  font-weight: 600;
+  margin: 0 0 16px;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -539,7 +538,7 @@ function getTagType(typeStr) {
 .form-hint {
   margin-top: 6px;
   font-size: 11px;
-  color: #86909c;
+  color: var(--text-3);
   line-height: 1.5;
 }
 
@@ -554,11 +553,11 @@ function getTagType(typeStr) {
 .ph-value {
   font-size: 22px;
   font-weight: 700;
-  color: #165dff;
+  color: var(--color-primary);
   font-variant-numeric: tabular-nums;
 }
-.ph-warn { color: #ff7d00 !important; }
-.ph-optimal { font-size: 12px; color: #86909c; }
+.ph-warn { color: var(--color-warning) !important; }
+.ph-optimal { font-size: 12px; color: var(--text-3); }
 
 /* Summary card */
 .summary-card { margin-bottom: 16px; }
@@ -569,29 +568,29 @@ function getTagType(typeStr) {
   font-weight: 600;
   margin: 20px 0 12px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f2f3f5;
-  color: #1d2129;
+  border-bottom: 1px solid var(--bg-3);
+  color: var(--text-1);
 }
 
 /* Reagent cards */
 .reagent-list { display: flex; flex-direction: column; gap: 10px; }
 .reagent-card { transition: all 0.2s; }
-.reagent-card.stage-zinc { border-left: 3px solid #0fc6c2; }
+.reagent-card.stage-zinc { border-left: 3px solid var(--chart-2); }
 .reagent-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .reagent-name { font-size: 14px; font-weight: 600; }
 .reagent-adj { margin-left: auto; font-size: 18px; font-weight: 700; }
-.adj_up { color: #00b42a; }
-.adj_down { color: #f53f3f; }
+.adj_up { color: var(--color-success); }
+.adj_down { color: var(--color-danger); }
 .reagent-dosage { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
-.dosage-num { font-size: 26px; font-weight: 700; color: #165dff; }
-.dosage-unit { font-size: 13px; color: #86909c; }
-.dosage-range { margin-left: auto; font-size: 11px; color: #c9cdd4; }
-.reagent-reason { font-size: 13px; color: #4e5969; margin: 0 0 4px; }
-.reagent-desc { font-size: 12px; color: #86909c; margin: 0; }
+.dosage-num { font-size: 26px; font-weight: 700; color: var(--color-primary); }
+.dosage-unit { font-size: 13px; color: var(--text-3); }
+.dosage-range { margin-left: auto; font-size: 11px; color: var(--text-4); }
+.reagent-reason { font-size: 13px; color: var(--text-2); margin: 0 0 4px; }
+.reagent-desc { font-size: 12px; color: var(--text-3); margin: 0; }
 
 /* Param / outcome items */
 .param-item, .outcome-item {
-  background: #f7f8fa;
+  background: var(--bg-2);
   border-radius: 6px;
   padding: 12px;
   text-align: center;
@@ -599,22 +598,22 @@ function getTagType(typeStr) {
 }
 .param-label, .outcome-label {
   font-size: 11px;
-  color: #86909c;
+  color: var(--text-3);
   display: block;
   margin-bottom: 4px;
 }
 .param-val, .outcome-val {
   font-size: 16px;
   font-weight: 600;
-  color: #1d2129;
+  color: var(--text-1);
 }
 
 /* Reasoning */
-.reasoning-list { padding-left: 20px; margin: 0; font-size: 13px; color: #4e5969; }
+.reasoning-list { padding-left: 20px; margin: 0; font-size: 13px; color: var(--text-2); }
 .reasoning-list li { margin-bottom: 6px; line-height: 1.6; }
 
 /* Action bar */
-.action-bar { display: flex; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #f2f3f5; }
+.action-bar { display: flex; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--bg-3); }
 .action-bar .el-button { flex: 1; }
 
 /* Empty state */

@@ -31,6 +31,13 @@
   --color-success: #00b42a;
   --color-warning: #ff7d00;
   --color-danger: #f53f3f;
+  /* 深色变体：浅底上的文字需要更深一档才够对比度（如告警标签） */
+  --color-warning-deep: #d25f00;
+  --color-danger-deep: #cb2634;
+  /* 浅底：状态标签的背景，三档固定，不再各页自调 */
+  --color-success-light: #e8ffea;
+  --color-warning-light: #fff7e6;
+  --color-danger-light: #ffece8;
 
   /* ---- 中性灰阶（全站主基调，不饱和） ---- */
   --text-1: #1d2129;        /* 主文字 */
@@ -41,6 +48,8 @@
   --bg-1: #ffffff;          /* 卡片白 */
   --bg-2: #f7f8fa;          /* 页面灰底 */
   --bg-3: #f2f3f5;          /* 容器深灰底 */
+  --bg-video: #0f1419;      /* 视频/画面舞台底（唯一的深色面，仅媒体区用） */
+  --bg-video: #0f1419;      /* 视频/画面舞台底（唯一的深色面，仅媒体区用） */
   --bg-hover: #f2f3f5;      /* hover 中性灰，不用主色淡版 */
   --bg-active: #e8f3ff;     /* active 才用主色淡版 */
 
@@ -91,6 +100,23 @@
   /* ---- 过渡（克制，不用 ease-in-out 弹跳） ---- */
   --transition: 0.15s ease;
 
+  /* ---- 页面骨架（PageShell 专用；2026-10-19 一致性整治） ----
+     ★ 这些值以前散落在 13 个页面里（16/20/24/32 混用），现在只在这里定义一次。
+       改页面留白 = 改这两行，全站跟着变。 */
+  --page-pad-y: 20px;
+  --page-pad-x: 24px;
+  --header-h: 56px;          /* 页头固定高度：不随标题/副标题条数变高 */
+  --header-gap: 12px;
+  --text-page-title: 20px;   /* 页面标题字号（比 h1 默认 22 收一档） */
+
+  /* ---- 内容卡与 KPI（管理型页面的标准盒） ---- */
+  --panel-radius: 8px;
+  --panel-pad-y: 14px;
+  --panel-pad-x: 18px;
+  --kpi-h: 88px;             /* KPI 卡固定高度，四格等宽 */
+  --kpi-val: 28px;
+  --kpi-label: 12px;
+
   /* ---- 图表配色（3 色，不是 7 色；多系列用深浅） ---- */
   --chart-1: #165dff;       /* 主色 */
   --chart-2: #86909c;       /* 中性对比色 */
@@ -134,9 +160,8 @@
   --border-color-light: var(--border-2);
 
   --color-primary-light: var(--color-primary-bg);
-  --color-success-light: #e8ffea;
-  --color-warning-light: #fff7e6;
-  --color-danger-light: #ffece8;
+  /* 状态浅底已在上面主区定义（--color-success-light / warning-light / danger-light），
+     这里不再重复一份 —— 同一令牌只能有一个真源。 */
   --color-info: var(--text-3);
   --color-info-light: var(--bg-3);
 

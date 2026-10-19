@@ -11,11 +11,18 @@
  * ⚠️ 历史版本这里是"演示模式"：阈值是编的（pb 0.8/2.5，而真实是 YAML 里的 <4.0/<2.5）、
  *    保存只弹 toast、四个开关（自动刷新/告警声音/紧凑视图…）没有任何消费者。
  *    那次改造把假的全部删掉/换成真的 —— 宁缺勿假。
+ *
+ * ★ 2026-10-19 一致性整治 P0 试点页：
+ *    原来 0 处使用设计令牌（27 处硬编码色），页头与另外 7 个页面各不相同。
+ *    现在统一走 PageShell + 4 格 StatCard + Panel，颜色全部来自 tokens.css。
+ *    KPI 四格都来自已有真实字段，没有为了"凑四格"新造指标。
  */
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import Panel from '../components/Panel.vue'
+import StatCard from '../components/StatCard.vue'
 
 const loading = ref(true)
 const sys = ref(null)
@@ -29,6 +36,22 @@ const sceneNameMap = computed(() => {
   const m = {}
   for (const s of sceneRows.value) m[s.name] = s.display_name
   return m
+})
+
+// ── 顶部四格 KPI：全部取自已加载的真实数据，不新造指标 ──
+const activeScenes = computed(() => sceneRows.value.filter((s) => s.status === 'active').length)
+const activeModels = computed(() => models.value.filter((m) => m.is_active).length)
+
+/** 运行时长压缩成"KPI 格放得下"的写法（28px 字号下超过 8 字会挤压） */
+const uptimeShort = computed(() => {
+  const sec = sys.value?.uptime_sec
+  if (sec == null) return '—'
+  const d = Math.floor(sec / 86400)
+  const h = Math.floor((sec % 86400) / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  if (d) return `${d} 天 ${h} 时`
+  if (h) return `${h} 时 ${m} 分`
+  return `${m} 分`
 })
 
 async function loadAll() {
@@ -139,19 +162,41 @@ onMounted(loadAll)
 </script>
 
 <template>
-  <div class="page">
-    <BackToFactory class="page-back" />
-    <div class="page-head">
-      <h2>设置</h2>
-      <span class="page-sub">配置均来自真实数据源：场景包 YAML + 模型台账，改动即生效</span>
-    </div>
+  <PageShell
+    title="设置"
+    sub="配置均来自真实数据源：场景包 YAML + 模型台账，改动即生效"
+  >
+    <template #kpi>
+      <StatCard
+        label="场景包"
+        :value="sceneRows.length"
+        unit="个"
+        :foot="`${activeScenes} 个运行中`"
+      />
+      <StatCard
+        label="模型版本"
+        :value="models.length"
+        unit="个"
+        :foot="`${activeModels} 个在线`"
+      />
+      <StatCard
+        label="数据库"
+        :value="sys?.db_size_mb ?? '—'"
+        unit="MB"
+        :foot="sys ? `${sys.table_count} 张表` : '正在读取'"
+      />
+      <StatCard
+        label="连续运行"
+        :value="uptimeShort"
+        :foot="sys?.boot_at || '—'"
+      />
+    </template>
 
-    <el-row :gutter="20">
+    <el-row :gutter="16">
       <!-- ══════ 左列 ══════ -->
       <el-col :xs="24" :md="12">
         <!-- 系统信息 -->
-        <el-card shadow="never" class="section-card">
-          <template #header><span class="card-title">系统信息</span></template>
+        <Panel title="系统信息" class="section-panel">
           <el-descriptions v-if="sys" :column="1" border size="small">
             <el-descriptions-item label="平台名称">{{ sys.app }}</el-descriptions-item>
             <el-descriptions-item label="版本号">{{ sys.version }}</el-descriptions-item>
@@ -172,14 +217,14 @@ onMounted(loadAll)
             </el-descriptions-item>
           </el-descriptions>
           <el-skeleton v-else :rows="6" animated />
-        </el-card>
+        </Panel>
 
         <!-- 场景与数据 -->
-        <el-card shadow="never" class="section-card">
-          <template #header>
-            <span class="card-title">场景与数据</span>
-            <span class="card-sub">{{ sceneRows.length }} 个场景包</span>
-          </template>
+        <Panel
+          title="场景与数据"
+          :sub="`${sceneRows.length} 个场景包`"
+          class="section-panel"
+        >
           <div class="scene-list">
             <div v-for="s in sceneRows" :key="s.name" class="scene-item">
               <div class="scene-info">
@@ -198,14 +243,14 @@ onMounted(loadAll)
           <div class="hint">
             「记录」= 该场景自有数据表的沉淀条数；设备健康监测为实时计算、不沉淀历史，故显示「—」。
           </div>
-        </el-card>
+        </Panel>
 
         <!-- 模型版本 -->
-        <el-card shadow="never" class="section-card">
-          <template #header>
-            <span class="card-title">模型版本</span>
-            <span class="card-sub">{{ models.length }} 个已注册</span>
-          </template>
+        <Panel
+          title="模型版本"
+          :sub="`${models.length} 个已注册`"
+          class="section-panel"
+        >
           <div class="model-list">
             <div v-for="m in models" :key="m.id" class="model-item">
               <div class="model-head">
@@ -226,17 +271,12 @@ onMounted(loadAll)
               </div>
             </div>
           </div>
-        </el-card>
+        </Panel>
       </el-col>
 
       <!-- ══════ 右列：告警阈值（真配置） ══════ -->
       <el-col :xs="24" :md="12">
-        <el-card shadow="never" class="section-card">
-          <template #header>
-            <span class="card-title">告警阈值</span>
-            <span class="card-sub">来源：场景包 YAML · 保存后立即生效</span>
-          </template>
-
+        <Panel title="告警阈值" sub="来源：场景包 YAML · 保存后立即生效">
           <div v-for="s in sceneCfgs" :key="s.name" class="rule-group">
             <div class="rule-group-head">
               <span class="rule-scene">{{ sceneNameMap[s.name] || s.display_name }}</span>
@@ -281,71 +321,68 @@ onMounted(loadAll)
           </div>
 
           <div class="hint">
-            阈值直接写回场景包 YAML（保留文件内注释）并即时刷新规则缓存 —— **下一次分析就用新值**。
+            阈值直接写回场景包 YAML（保留文件内注释）并即时刷新规则缓存 ——
+            <strong>下一次分析就用新值</strong>。
             想亲眼验证：把「铅品位 低于」调到实测值以下，再分析一帧，该条告警立刻消失。
           </div>
-        </el-card>
+        </Panel>
       </el-col>
     </el-row>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.page { max-width: 1240px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
-.page-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
-h2 { color: #1d2129; font-size: 22px; margin: 0; }
-.page-sub { font-size: 12px; color: #86909c; }
+/* 页面骨架/留白由 PageShell 统一提供，本页不再自己写 padding */
 
-.section-card { margin-bottom: 18px; }
-.card-title { font-size: 15px; font-weight: 600; color: #1d2129; }
-.card-sub { margin-left: 10px; font-size: 12px; color: #86909c; }
+.section-panel { margin-bottom: 16px; }
+.el-col:last-child .section-panel { margin-bottom: 0; }
 
-.link { color: #165dff; text-decoration: none; }
-.mono { font-family: Consolas, Menlo, monospace; }
-.dim { font-size: 12px; color: #86909c; margin-top: 2px; word-break: break-all; }
-.dim-inline { color: #86909c; }
-.hint { margin-top: 12px; font-size: 12px; color: #86909c; line-height: 1.7; }
+.link { color: var(--color-primary); text-decoration: none; }
+.mono { font-family: var(--font-mono); }
+.dim { font-size: var(--text-xs); color: var(--text-3); margin-top: 2px; word-break: break-all; }
+.dim-inline { color: var(--text-3); }
+.hint { margin-top: 12px; font-size: var(--text-xs); color: var(--text-3); line-height: var(--leading-relaxed); }
 
 /* 场景与数据 */
 .scene-list { display: flex; flex-direction: column; gap: 8px; }
 .scene-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 9px 12px; background: #f7f8fa; border-radius: 6px;
+  padding: 9px 12px; background: var(--bg-2); border-radius: var(--radius);
 }
 .scene-info { display: flex; align-items: center; gap: 8px; }
-.scene-name { font-weight: 600; color: #1d2129; font-size: 14px; }
-.scene-stats { display: flex; gap: 14px; font-size: 12px; color: #4e5969; }
-.scene-stats b { color: #165dff; }
+.scene-name { font-weight: var(--weight-semibold); color: var(--text-1); font-size: var(--text-base); }
+.scene-stats { display: flex; gap: 14px; font-size: var(--text-xs); color: var(--text-2); }
+.scene-stats b { color: var(--color-primary); }
 
 /* 模型版本 */
 .model-list { display: flex; flex-direction: column; gap: 10px; }
-.model-item { padding: 10px 12px; background: #f7f8fa; border-radius: 6px; }
+.model-item { padding: 10px 12px; background: var(--bg-2); border-radius: var(--radius); }
 .model-head { display: flex; align-items: center; gap: 8px; }
-.model-ver { font-weight: 600; font-size: 13px; color: #1d2129; }
-.model-scene { font-size: 12px; color: #4e5969; }
-.model-health { margin-left: auto; font-size: 12px; }
-.model-health.ok { color: #00b42a; }
-.model-health.bad { color: #f53f3f; }
-.model-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: #86909c; }
-.model-meta .hl { color: #165dff; font-weight: 600; }
+.model-ver { font-weight: var(--weight-semibold); font-size: var(--text-sm); color: var(--text-1); }
+.model-scene { font-size: var(--text-xs); color: var(--text-2); }
+.model-health { margin-left: auto; font-size: var(--text-xs); }
+.model-health.ok { color: var(--color-success); }
+.model-health.bad { color: var(--color-danger); }
+.model-meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; font-size: var(--text-xs); color: var(--text-3); }
+.model-meta .hl { color: var(--color-primary); font-weight: var(--weight-semibold); }
 
 /* 告警阈值 */
-.rule-group { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid #f0f0f0; }
+.rule-group { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border-2); }
 .rule-group:last-of-type { border-bottom: none; margin-bottom: 4px; padding-bottom: 4px; }
 .rule-group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.rule-scene { font-weight: 600; color: #1d2129; font-size: 14px; }
-.rule-count { font-size: 12px; color: #86909c; }
+.rule-scene { font-weight: var(--weight-semibold); color: var(--text-1); font-size: var(--text-base); }
+.rule-count { font-size: var(--text-xs); color: var(--text-3); }
 .rule-group-head .el-button { margin-left: auto; }
 
 .rule-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
 .rule-level { width: 3px; height: 26px; border-radius: 2px; flex: none; }
-.rule-level.warning { background: #ff7d00; }
-.rule-level.danger { background: #f53f3f; }
+.rule-level.warning { background: var(--color-warning); }
+.rule-level.danger { background: var(--color-danger); }
 .rule-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.rule-field { font-size: 13px; color: #1d2129; }
-.rule-name { font-size: 11px; color: #c9cdd4; }
+.rule-field { font-size: var(--text-sm); color: var(--text-1); }
+.rule-name { font-size: 11px; color: var(--text-4); }
 .rule-input { width: 118px; flex: none; }
 
 .rule-actions { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
-.dirty-hint { font-size: 12px; color: #ff7d00; }
+.dirty-hint { font-size: var(--text-xs); color: var(--color-warning); }
 </style>

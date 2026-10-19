@@ -22,10 +22,11 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { VideoPlay, VideoPause } from '@element-plus/icons-vue'
 import api from '../api'
-import BackToFactory from '../components/BackToFactory.vue'
+import PageShell from '../components/PageShell.vue'
+import StatCard from '../components/StatCard.vue'
 
 const DATA_DATE = '2019-08-22'
-const C_LINE = '#165dff'
+const C_LINE = 'var(--color-primary)'
 function pad(n) { return String(n).padStart(2, '0') }
 
 /* ---------------- 现场画面（唯一点位） ---------------- */
@@ -408,9 +409,9 @@ const xStart = computed(() => xEnd.value - WIN_MIN * 60 * 1000)
  *  ★ 起伏来自**真实工艺差异**（精矿 59% vs 尾矿 0.45%），不是放大 y 轴 → 老板要"变化大"又不假
  *  量级差异用双 y 轴：左轴 = 给矿/尾矿（低品位），右轴 = 精矿（高品位） */
 const TREND_SERIES = [
-  { key: 'Feed II|Pb', name: '给矿', axis: 0, color: '#165dff', width: 2.5, main: true },
-  { key: 'Xpb II|Pb', name: '铅扫选尾矿', axis: 0, color: '#00b42a', width: 1.8, main: false },
-  { key: 'Kpb II|Pb', name: '铅精矿', axis: 1, color: '#ff7d00', width: 1.8, main: false },
+  { key: 'Feed II|Pb', name: '给矿', axis: 0, color: 'var(--color-primary)', width: 2.5, main: true },
+  { key: 'Xpb II|Pb', name: '铅扫选尾矿', axis: 0, color: 'var(--color-success)', width: 1.8, main: false },
+  { key: 'Kpb II|Pb', name: '铅精矿', axis: 1, color: 'var(--color-warning)', width: 1.8, main: false },
 ]
 
 /** 左轴范围（给矿+尾矿，低品位段）：含窗口内这两条线的所有点，量化到 0.5 */
@@ -465,8 +466,8 @@ function buildOption() {
   if (st) {
     markLines.push({
       yAxis: Number(st.avg.toFixed(3)),
-      lineStyle: { color: '#c9cdd4', width: 1, type: 'dashed' },
-      label: { show: true, formatter: `均值 ${st.avg.toFixed(2)}`, color: '#86909c', fontSize: 10, position: 'insideStartTop' },
+      lineStyle: { color: 'var(--text-4)', width: 1, type: 'dashed' },
+      label: { show: true, formatter: `均值 ${st.avg.toFixed(2)}`, color: 'var(--text-3)', fontSize: 10, position: 'insideStartTop' },
     })
   }
 
@@ -510,7 +511,7 @@ function buildOption() {
       data: d.linePts,
       markPoint: d.nowVal != null ? {
         silent: true, symbol: 'circle', symbolSize: 7,
-        itemStyle: { color: t.color, borderColor: '#fff', borderWidth: 1.5 },
+        itemStyle: { color: t.color, borderColor: 'var(--bg-1)', borderWidth: 1.5 },
         label: { show: false },
         data: [{ coord: [XCUR, Number(d.nowVal.toFixed(3))] }],
       } : undefined,
@@ -522,7 +523,7 @@ function buildOption() {
     grid: { left: 44, right: 44, top: 22, bottom: 20 },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'line', lineStyle: { color: '#c9cdd4' } },
+      axisPointer: { type: 'line', lineStyle: { color: 'var(--text-4)' } },
       valueFormatter: (v) => (v == null ? '—' : Number(v).toFixed(2) + '%'),
     },
     legend: { show: false },
@@ -530,9 +531,9 @@ function buildOption() {
       // ★ 10min 一档刻度（30min 窗口 = 3~4 个标签）；time 轴须用 min/maxInterval 强约束
       type: 'time', min: X0, max: X1,
       minInterval: 10 * 60 * 1000, maxInterval: 10 * 60 * 1000,
-      axisLine: { lineStyle: { color: '#c9cdd4' } },
-      axisLabel: { color: '#86909c', fontSize: 11, hideOverlap: true, formatter: (v) => { const d = new Date(v); return `${pad(d.getHours())}:${pad(d.getMinutes())}` } },
-      splitLine: { show: true, lineStyle: { color: '#f7f8fa' } },
+      axisLine: { lineStyle: { color: 'var(--text-4)' } },
+      axisLabel: { color: 'var(--text-3)', fontSize: 11, hideOverlap: true, formatter: (v) => { const d = new Date(v); return `${pad(d.getHours())}:${pad(d.getMinutes())}` } },
+      splitLine: { show: true, lineStyle: { color: 'var(--bg-2)' } },
     },
     yAxis: [
       {
@@ -541,8 +542,8 @@ function buildOption() {
         min: lax.min, max: lax.max,
         splitNumber: 3,
         axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: '#86909c', fontSize: 11, formatter: '{value}%' },
-        splitLine: { lineStyle: { color: '#f2f3f5' } },
+        axisLabel: { color: 'var(--text-3)', fontSize: 11, formatter: '{value}%' },
+        splitLine: { lineStyle: { color: 'var(--bg-3)' } },
       },
       {
         // 右轴：铅精矿（高品位段）
@@ -551,7 +552,7 @@ function buildOption() {
         splitNumber: 3,
         position: 'right',
         axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: '#ff7d00', fontSize: 11, formatter: '{value}%' },
+        axisLabel: { color: 'var(--color-warning)', fontSize: 11, formatter: '{value}%' },
         splitLine: { show: false },
       },
     ],
@@ -580,7 +581,7 @@ function buildOption() {
         markLine: { silent: true, symbol: 'none', animation: false, data: markLines },
         markPoint: hero.nowVal != null ? {
           silent: true, symbol: 'circle', symbolSize: 9,
-          itemStyle: { color: C_LINE, borderColor: '#fff', borderWidth: 2 },
+          itemStyle: { color: C_LINE, borderColor: 'var(--bg-1)', borderWidth: 2 },
           label: { show: false },
           data: [{ coord: [XCUR, Number(hero.nowVal.toFixed(3))] }],
         } : undefined,
@@ -593,7 +594,7 @@ function buildOption() {
         name: '实测点', silent: true, z: 5, yAxisIndex: 0, legendHoverLink: false,
         lineStyle: { width: 0, opacity: 0 },
         symbol: 'circle', symbolSize: 5, showSymbol: true,
-        itemStyle: { color: '#fff', borderColor: C_LINE, borderWidth: 2 },
+        itemStyle: { color: 'var(--bg-1)', borderColor: C_LINE, borderWidth: 2 },
         tooltip: { show: false },
         data: hero.realPts,
       },
@@ -671,27 +672,26 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="monitor">
-    <!-- 顶栏 -->
-    <BackToFactory class="page-back" />
-    <div class="mn-top">
-      <div class="mn-top-left">
-        <div class="mn-title">
-          <h2>实时监控</h2>
-          <span class="mn-live"><i />LIVE</span>
-        </div>
-        <div class="mn-kpis">
-          <div v-for="k in kpis" :key="k.label" class="mk">
-            <span class="mk-label">{{ k.label }}</span>
-            <span class="mk-val">{{ k.val }}<i>{{ k.unit }}</i></span>
-          </div>
-        </div>
-      </div>
+  <PageShell title="实时监控" kpi="inline">
+    <template #meta>
+      <span class="mn-live"><i />LIVE</span>
+    </template>
+    <template #kpi>
+      <StatCard
+        v-for="k in kpis"
+        :key="k.label"
+        variant="inline"
+        :label="k.label"
+        :value="k.val"
+        :unit="k.unit"
+      />
+    </template>
+    <template #actions>
       <div class="mn-clock">
         <span class="mn-time">{{ camClock }}</span>
         <span class="mn-date">画面时刻 · 2019-08-22 实录</span>
       </div>
-    </div>
+    </template>
 
     <!-- 主体：左「现场画面」 · 右「品位趋势 + 实时快照」 -->
     <div class="mn-body">
@@ -742,9 +742,9 @@ onBeforeUnmount(() => {
             <span>给矿品位趋势</span>
             <span class="side-sub">{{ CAM.point }} · {{ CAM.element }} · 滚动 {{ WIN_MIN }}min</span>
             <span class="side-legend">
-              <i class="lg-ink" style="background:#165dff" />给矿
-              <i class="lg-ink" style="background:#00b42a" />铅尾矿
-              <i class="lg-ink" style="background:#ff7d00" />铅精矿
+              <i class="lg-ink" style="background:var(--color-primary)" />给矿
+              <i class="lg-ink" style="background:var(--color-success)" />铅尾矿
+              <i class="lg-ink" style="background:var(--color-warning)" />铅精矿
             </span>
           </div>
           <div class="tstats">
@@ -776,8 +776,8 @@ onBeforeUnmount(() => {
                   <svg v-if="r.spark" class="cr-spark" viewBox="0 0 100 24" preserveAspectRatio="none">
                     <defs>
                       <linearGradient :id="'cg-' + r.gid" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0" stop-color="#165dff" stop-opacity=".22" />
-                        <stop offset="1" stop-color="#165dff" stop-opacity="0" />
+                        <stop offset="0" stop-color="var(--color-primary)" stop-opacity=".22" />
+                        <stop offset="1" stop-color="var(--color-primary)" stop-opacity="0" />
                       </linearGradient>
                     </defs>
                     <rect v-if="r.spark.band" :y="r.spark.band.y" :height="r.spark.band.h" x="0" width="100" class="cr-band" />
@@ -797,56 +797,46 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-  </div>
+  </PageShell>
 </template>
 
 <style scoped>
-.monitor { display: flex; flex-direction: column; gap: 10px; height: calc(100vh - 40px); min-height: 0; }
+.monitor { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
 
-/* 顶栏 */
-.mn-top { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-shrink: 0; }
-.mn-top-left { display: flex; align-items: center; gap: 26px; min-width: 0; }
-.mn-title { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.mn-title h2 { margin: 0; font-size: 17px; color: #1d2129; white-space: nowrap; }
+/* 页头已交给 PageShell（本页 kpi="inline"，KPI 横排在页头右侧，不占垂直空间） */
 .mn-live {
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 4px;
-  background: #ffece8; color: #f53f3f; font-size: 11px; font-weight: 700; letter-spacing: .5px;
+  background: var(--color-danger-light); color: var(--color-danger); font-size: 11px; font-weight: 700; letter-spacing: .5px;
 }
-.mn-live i { width: 6px; height: 6px; border-radius: 50%; background: #f53f3f; animation: mn-breath 1.6s ease-in-out infinite; }
+.mn-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-danger); animation: mn-breath 1.6s ease-in-out infinite; }
 @keyframes mn-breath { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.82); } }
 
-.mn-kpis { display: flex; gap: 26px; align-items: center; min-width: 0; }
-.mk { display: flex; flex-direction: column; gap: 1px; }
-.mk-label { font-size: 11px; color: #86909c; }
-.mk-val { font-size: 19px; font-weight: 600; color: #1d2129; font-variant-numeric: tabular-nums; line-height: 1.15; }
-.mk-val i { font-style: normal; font-size: 10px; font-weight: 400; color: #86909c; margin-left: 3px; }
-
 .mn-clock { display: flex; align-items: baseline; gap: 10px; flex-shrink: 0; }
-.mn-time { font-size: 22px; font-weight: 600; color: #1d2129; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, Consolas, monospace; }
-.mn-date { font-size: 12px; color: #86909c; }
+.mn-time { font-size: 22px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.mn-date { font-size: 12px; color: var(--text-3); }
 
 /* 主体：两栏 —— 现场画面 / 品位趋势 + 实时快照 */
 .mn-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: 10px; }
 
 /* 左：主画面 */
 .mn-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
-.stage-video { position: relative; flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; background: #0f1419; }
+.stage-video { position: relative; flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; background: var(--bg-video); }
 .cam-video { display: block; width: 100%; height: 100%; object-fit: cover; }
-.stage-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #86909c; font-size: 13px; }
+.stage-fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 13px; }
 
 .cam-hud { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 12px 14px; }
 .hud-top { display: flex; align-items: center; justify-content: space-between; }
 .hud-name {
-  font-size: 13px; font-weight: 600; color: #fff;
+  font-size: 13px; font-weight: 600; color: var(--bg-1);
   padding: 4px 10px; border-radius: 4px; background: rgba(0,0,0,.62);
   backdrop-filter: blur(2px);
 }
 .hud-live {
-  display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: #fff;
+  display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: var(--bg-1);
   letter-spacing: .5px; padding: 4px 8px; border-radius: 3px; background: rgba(0,0,0,.62);
   backdrop-filter: blur(2px);
 }
-.hud-live i { width: 5px; height: 5px; border-radius: 50%; background: #f53f3f; animation: mn-breath 1.6s ease-in-out infinite; }
+.hud-live i { width: 5px; height: 5px; border-radius: 50%; background: var(--color-danger); animation: mn-breath 1.6s ease-in-out infinite; }
 .hud-bottom {
   display: flex; align-items: flex-end; justify-content: space-between;
   padding: 30px 14px 6px; margin: 0 -14px -12px;
@@ -855,7 +845,7 @@ onBeforeUnmount(() => {
 .hud-val-wrap { display: flex; flex-direction: column; gap: 3px; }
 .hud-lbl { font-size: 12px; color: rgba(255,255,255,.82); text-shadow: 0 1px 3px rgba(0,0,0,.8); }
 .hud-val {
-  font-size: 34px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums;
+  font-size: 34px; font-weight: 700; color: var(--bg-1); font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 6px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.9);
   line-height: 1;
 }
@@ -867,54 +857,54 @@ onBeforeUnmount(() => {
 
 /* 画面控制条 */
 .stage-bar { flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 24px; padding: 0 2px; }
-.stage-seg { font-size: 11px; color: #86909c; }
-.stage-tick { font-size: 11px; color: #165dff; font-variant-numeric: tabular-nums; }
-.stage-src { margin-left: auto; font-size: 11px; color: #c9cdd4; }
+.stage-seg { font-size: 11px; color: var(--text-3); }
+.stage-tick { font-size: 11px; color: var(--color-primary); font-variant-numeric: tabular-nums; }
+.stage-src { margin-left: auto; font-size: 11px; color: var(--text-4); }
 
 /* 右栏：曲线自适应撑满，工艺链按内容高度（保证 9 行永不裁切） */
 .mn-side { min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, auto); gap: 10px; }
-.side-card { background: #fff; border: 1px solid #e5e6eb; border-radius: 8px; padding: 12px; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.side-card { background: var(--bg-1); border: 1px solid var(--border-1); border-radius: 8px; padding: 12px; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .side-head { display: flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
-.side-head > span:first-child { font-size: 14px; font-weight: 600; color: #1d2129; white-space: nowrap; }
-.side-sub { font-size: 11px; color: #86909c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-head > span:first-child { font-size: 14px; font-weight: 600; color: var(--text-1); white-space: nowrap; }
+.side-sub { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 窄屏（≤1500）优先保住标题不折行，隐藏副标题细节 */
 @media (max-width: 1500px) { .side-sub { display: none; } }
-.side-legend { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 10px; color: #86909c; }
+.side-legend { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-3); }
 .side-legend .lg-ink { display: inline-block; width: 9px; height: 3px; border-radius: 2px; margin-right: 2px; vertical-align: middle; }
 
 /* 趋势卡 */
 .tstats { display: flex; gap: 18px; flex-shrink: 0; }
 .tstat { display: flex; align-items: baseline; gap: 4px; }
-.tstat-k { font-size: 10px; color: #86909c; }
-.tstat-v { font-size: 13px; font-weight: 600; color: #1d2129; font-variant-numeric: tabular-nums; }
+.tstat-k { font-size: 10px; color: var(--text-3); }
+.tstat-v { font-size: 13px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
 .chart { flex: 1; min-height: 150px; }
 .trend-note {
   flex-shrink: 0; display: flex; align-items: center; gap: 6px;
-  font-size: 11px; color: #4e5969; background: #f7f8fa; border-radius: 4px; padding: 5px 9px;
+  font-size: 11px; color: var(--text-2); background: var(--bg-2); border-radius: 4px; padding: 5px 9px;
 }
-.trend-note::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #165dff; flex-shrink: 0; }
+.trend-note::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary); flex-shrink: 0; }
 
 /* 工艺链 —— ★ 放大版（老板要求"大一点、有感觉"） */
 .chain { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 .chain-group { display: flex; flex-direction: column; gap: 4px; }
-.chain-group-title { font-size: 12px; color: #86909c; font-weight: 600; padding-bottom: 3px; border-bottom: 1px dashed #e5e6eb; }
+.chain-group-title { font-size: 12px; color: var(--text-3); font-weight: 600; padding-bottom: 3px; border-bottom: 1px dashed var(--border-1); }
 .chain-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 66px 40px; align-items: center; gap: 8px; padding: 3px 0; }
-.chain-row.stale .cr-name, .chain-row.stale .cr-val { color: #c9cdd4; }
-.cr-name { font-size: 13px; color: #4e5969; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
+.chain-row.stale .cr-name, .chain-row.stale .cr-val { color: var(--text-4); }
+.cr-name { font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
 /* ★ 名称前状态点：相对历史 P10~P90 的偏离度 */
-.cr-dot-st { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #00b42a; }
-.cr-dot-st.lv-ok { background: #00b42a; }
-.cr-dot-st.lv-high, .cr-dot-st.lv-low { background: #ff7d00; }
-.cr-dot-st.lv-over, .cr-dot-st.lv-under { background: #f53f3f; }
+.cr-dot-st { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--color-success); }
+.cr-dot-st.lv-ok { background: var(--color-success); }
+.cr-dot-st.lv-high, .cr-dot-st.lv-low { background: var(--color-warning); }
+.cr-dot-st.lv-over, .cr-dot-st.lv-under { background: var(--color-danger); }
 /* ★ 小线容器（折线 + 面积 + 正常区间背景带 + 末端"现在"落点）—— 高度 26px */
 .cr-line { position: relative; display: block; width: 100%; height: 26px; min-width: 0; }
-.cr-spark { display: block; width: 100%; height: 26px; color: #2f7bff; min-width: 0; }
+.cr-spark { display: block; width: 100%; height: 26px; color: var(--color-primary); min-width: 0; }
 /* ★ 正常区间背景带（历史 P10~P90）：淡绿 = 合格区，线在带内 = 正常 */
-.cr-band { fill: #00b42a; fill-opacity: .10; }
+.cr-band { fill: var(--color-success); fill-opacity: .10; }
 /* 末端实心落点 = "现在"；带白色描边 + 光晕，并轻微呼吸（实时感） */
 .cr-dot {
   position: absolute; width: 9px; height: 9px; border-radius: 50%;
-  background: #165dff; border: 1.5px solid #fff; box-sizing: border-box;
+  background: var(--color-primary); border: 1.5px solid var(--bg-1); box-sizing: border-box;
   transform: translate(-50%, -50%);
   box-shadow: 0 0 0 1.5px rgba(22,93,255,.45), 0 0 6px 1px rgba(22,93,255,.35);
   pointer-events: none;
@@ -924,33 +914,33 @@ onBeforeUnmount(() => {
   0%, 100% { box-shadow: 0 0 0 1.5px rgba(22,93,255,.45), 0 0 6px 1px rgba(22,93,255,.30); }
   50% { box-shadow: 0 0 0 2.5px rgba(22,93,255,.22), 0 0 11px 3px rgba(22,93,255,.42); }
 }
-.cr-spark-empty { display: flex; align-items: center; height: 26px; font-size: 11px; color: #c9cdd4; }
+.cr-spark-empty { display: flex; align-items: center; height: 26px; font-size: 11px; color: var(--text-4); }
 .cr-val {
-  font-size: 17px; font-weight: 600; color: #1d2129; font-variant-numeric: tabular-nums;
+  font-size: 17px; font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums;
   text-align: right; white-space: nowrap;
 }
-.cr-val i { font-style: normal; font-size: 10px; font-weight: 400; color: #86909c; margin-left: 1px; }
+.cr-val i { font-style: normal; font-size: 10px; font-weight: 400; color: var(--text-3); margin-left: 1px; }
 /* ★ 数值按偏离度着色 */
-.cr-val.lv-high, .cr-val.lv-low { color: #d25f00; }
-.cr-val.lv-over, .cr-val.lv-under { color: #cb2634; }
+.cr-val.lv-high, .cr-val.lv-low { color: var(--color-warning-deep); }
+.cr-val.lv-over, .cr-val.lv-under { color: var(--color-danger-deep); }
 /* ★ 偏离度标签（数值右侧） */
 .cr-dev {
   font-size: 10px; line-height: 1; text-align: center; padding: 3px 0; border-radius: 3px;
   white-space: nowrap; cursor: default;
 }
-.cr-dev.lv-ok { color: #00b42a; background: #e8ffea; }
-.cr-dev.lv-high, .cr-dev.lv-low { color: #d25f00; background: #fff3e8; }
-.cr-dev.lv-over, .cr-dev.lv-under { color: #cb2634; background: #ffece8; }
-.cr-dev.lv-na { color: #c9cdd4; background: transparent; }
+.cr-dev.lv-ok { color: var(--color-success); background: var(--color-success-light); }
+.cr-dev.lv-high, .cr-dev.lv-low { color: var(--color-warning-deep); background: var(--color-warning-light); }
+.cr-dev.lv-over, .cr-dev.lv-under { color: var(--color-danger-deep); background: var(--color-danger-light); }
+.cr-dev.lv-na { color: var(--text-4); background: transparent; }
 
 /* 节拍标识（右侧数据刷新时刻） */
 .side-tick {
-  margin-left: auto; font-size: 10px; font-weight: 600; color: #165dff;
+  margin-left: auto; font-size: 10px; font-weight: 600; color: var(--color-primary);
   font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, Consolas, monospace;
-  padding: 1px 6px; border-radius: 3px; background: #f0f5ff;
+  padding: 1px 6px; border-radius: 3px; background: var(--color-primary-bg);
 }
 
-.side-foot { font-size: 10px; color: #c9cdd4; flex-shrink: 0; }
+.side-foot { font-size: 10px; color: var(--text-4); flex-shrink: 0; }
 
 @media (max-height: 880px) {
   .monitor { height: auto; }
