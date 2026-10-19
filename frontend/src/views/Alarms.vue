@@ -1,4 +1,6 @@
 <script setup>
+import { cssVar } from '../utils/chartColor'
+
 /**
  * 告警中心 v2 — P0（证据抽屉 + 处置闭环 + 帧级聚合）
  *
@@ -28,11 +30,11 @@ function goFeishu() {
 const POSITIONS = ['浮选班长', '磨矿班长', '值班调度', '安全员', '工艺工程师', '设备点检员']
 
 const STATUS_META = {
-  new:            { label: '待处理', color: 'var(--color-danger)',  tag: 'danger' },
-  acknowledged:   { label: '已确认', color: 'var(--color-warning)', tag: 'warning' },
-  in_progress:    { label: '处理中', color: 'var(--color-primary)', tag: 'primary' },
-  closed:         { label: '已闭环', color: 'var(--color-success)', tag: 'success' },
-  false_positive: { label: '误报',   color: 'var(--text-3)',        tag: 'info' },
+  new:            { label: '待处理', color: cssVar('--color-danger'),  tag: 'danger' },
+  acknowledged:   { label: '已确认', color: cssVar('--color-warning'), tag: 'warning' },
+  in_progress:    { label: '处理中', color: cssVar('--color-primary'), tag: 'primary' },
+  closed:         { label: '已闭环', color: cssVar('--color-success'), tag: 'success' },
+  false_positive: { label: '误报',   color: cssVar('--text-3'),        tag: 'info' },
 }
 
 const SCENES = [
@@ -446,8 +448,8 @@ function devBarWidth(z) {
   return Math.min(Math.abs(z) / 3, 1) * 50
 }
 function devBarStyle(z, severity) {
-  const color = severity === 'high' ? 'var(--color-danger)'
-    : severity === 'medium' ? 'var(--color-warning)' : 'var(--text-4)'
+  const color = severity === 'high' ? cssVar('--color-danger')
+    : severity === 'medium' ? cssVar('--color-warning') : cssVar('--text-4')
   const w = devBarWidth(z)
   return z >= 0
     ? { left: '50%', width: `${w}%`, background: color }

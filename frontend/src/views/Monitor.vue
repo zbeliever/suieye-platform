@@ -1,4 +1,6 @@
 <script setup>
+import { cssVar } from '../utils/chartColor'
+
 /**
  * 实时监控 —— 凡口铅锌矿浮选现场 · 单点在线监测（2026-10-16 单点重构）
  *
@@ -26,7 +28,7 @@ import PageShell from '../components/PageShell.vue'
 import StatCard from '../components/StatCard.vue'
 
 const DATA_DATE = '2019-08-22'
-const C_LINE = 'var(--color-primary)'
+const C_LINE = cssVar('--color-primary')
 function pad(n) { return String(n).padStart(2, '0') }
 
 /* ---------------- 现场画面（唯一点位） ---------------- */
@@ -409,9 +411,9 @@ const xStart = computed(() => xEnd.value - WIN_MIN * 60 * 1000)
  *  ★ 起伏来自**真实工艺差异**（精矿 59% vs 尾矿 0.45%），不是放大 y 轴 → 老板要"变化大"又不假
  *  量级差异用双 y 轴：左轴 = 给矿/尾矿（低品位），右轴 = 精矿（高品位） */
 const TREND_SERIES = [
-  { key: 'Feed II|Pb', name: '给矿', axis: 0, color: 'var(--color-primary)', width: 2.5, main: true },
-  { key: 'Xpb II|Pb', name: '铅扫选尾矿', axis: 0, color: 'var(--color-success)', width: 1.8, main: false },
-  { key: 'Kpb II|Pb', name: '铅精矿', axis: 1, color: 'var(--color-warning)', width: 1.8, main: false },
+  { key: 'Feed II|Pb', name: '给矿', axis: 0, color: cssVar('--color-primary'), width: 2.5, main: true },
+  { key: 'Xpb II|Pb', name: '铅扫选尾矿', axis: 0, color: cssVar('--color-success'), width: 1.8, main: false },
+  { key: 'Kpb II|Pb', name: '铅精矿', axis: 1, color: cssVar('--color-warning'), width: 1.8, main: false },
 ]
 
 /** 左轴范围（给矿+尾矿，低品位段）：含窗口内这两条线的所有点，量化到 0.5 */
@@ -466,8 +468,8 @@ function buildOption() {
   if (st) {
     markLines.push({
       yAxis: Number(st.avg.toFixed(3)),
-      lineStyle: { color: 'var(--text-4)', width: 1, type: 'dashed' },
-      label: { show: true, formatter: `均值 ${st.avg.toFixed(2)}`, color: 'var(--text-3)', fontSize: 10, position: 'insideStartTop' },
+      lineStyle: { color: cssVar('--text-4'), width: 1, type: 'dashed' },
+      label: { show: true, formatter: `均值 ${st.avg.toFixed(2)}`, color: cssVar('--text-3'), fontSize: 10, position: 'insideStartTop' },
     })
   }
 
@@ -511,7 +513,7 @@ function buildOption() {
       data: d.linePts,
       markPoint: d.nowVal != null ? {
         silent: true, symbol: 'circle', symbolSize: 7,
-        itemStyle: { color: t.color, borderColor: 'var(--bg-1)', borderWidth: 1.5 },
+        itemStyle: { color: t.color, borderColor: cssVar('--bg-1'), borderWidth: 1.5 },
         label: { show: false },
         data: [{ coord: [XCUR, Number(d.nowVal.toFixed(3))] }],
       } : undefined,
@@ -523,7 +525,7 @@ function buildOption() {
     grid: { left: 44, right: 44, top: 22, bottom: 20 },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'line', lineStyle: { color: 'var(--text-4)' } },
+      axisPointer: { type: 'line', lineStyle: { color: cssVar('--text-4') } },
       valueFormatter: (v) => (v == null ? '—' : Number(v).toFixed(2) + '%'),
     },
     legend: { show: false },
@@ -531,9 +533,9 @@ function buildOption() {
       // ★ 10min 一档刻度（30min 窗口 = 3~4 个标签）；time 轴须用 min/maxInterval 强约束
       type: 'time', min: X0, max: X1,
       minInterval: 10 * 60 * 1000, maxInterval: 10 * 60 * 1000,
-      axisLine: { lineStyle: { color: 'var(--text-4)' } },
-      axisLabel: { color: 'var(--text-3)', fontSize: 11, hideOverlap: true, formatter: (v) => { const d = new Date(v); return `${pad(d.getHours())}:${pad(d.getMinutes())}` } },
-      splitLine: { show: true, lineStyle: { color: 'var(--bg-2)' } },
+      axisLine: { lineStyle: { color: cssVar('--text-4') } },
+      axisLabel: { color: cssVar('--text-3'), fontSize: 11, hideOverlap: true, formatter: (v) => { const d = new Date(v); return `${pad(d.getHours())}:${pad(d.getMinutes())}` } },
+      splitLine: { show: true, lineStyle: { color: cssVar('--bg-2') } },
     },
     yAxis: [
       {
@@ -542,8 +544,8 @@ function buildOption() {
         min: lax.min, max: lax.max,
         splitNumber: 3,
         axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: 'var(--text-3)', fontSize: 11, formatter: '{value}%' },
-        splitLine: { lineStyle: { color: 'var(--bg-3)' } },
+        axisLabel: { color: cssVar('--text-3'), fontSize: 11, formatter: '{value}%' },
+        splitLine: { lineStyle: { color: cssVar('--bg-3') } },
       },
       {
         // 右轴：铅精矿（高品位段）
@@ -552,7 +554,7 @@ function buildOption() {
         splitNumber: 3,
         position: 'right',
         axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: 'var(--color-warning)', fontSize: 11, formatter: '{value}%' },
+        axisLabel: { color: cssVar('--color-warning'), fontSize: 11, formatter: '{value}%' },
         splitLine: { show: false },
       },
     ],
@@ -581,7 +583,7 @@ function buildOption() {
         markLine: { silent: true, symbol: 'none', animation: false, data: markLines },
         markPoint: hero.nowVal != null ? {
           silent: true, symbol: 'circle', symbolSize: 9,
-          itemStyle: { color: C_LINE, borderColor: 'var(--bg-1)', borderWidth: 2 },
+          itemStyle: { color: C_LINE, borderColor: cssVar('--bg-1'), borderWidth: 2 },
           label: { show: false },
           data: [{ coord: [XCUR, Number(hero.nowVal.toFixed(3))] }],
         } : undefined,
@@ -594,7 +596,7 @@ function buildOption() {
         name: '实测点', silent: true, z: 5, yAxisIndex: 0, legendHoverLink: false,
         lineStyle: { width: 0, opacity: 0 },
         symbol: 'circle', symbolSize: 5, showSymbol: true,
-        itemStyle: { color: 'var(--bg-1)', borderColor: C_LINE, borderWidth: 2 },
+        itemStyle: { color: cssVar('--bg-1'), borderColor: C_LINE, borderWidth: 2 },
         tooltip: { show: false },
         data: hero.realPts,
       },

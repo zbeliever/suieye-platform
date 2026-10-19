@@ -1,4 +1,6 @@
 <script setup>
+import { cssVar } from '../utils/chartColor'
+
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
@@ -81,30 +83,30 @@ function renderTrendChart(d) {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'var(--bg-1)',
-      borderColor: 'var(--border-1)',
-      textStyle: { color: 'var(--text-1)', fontSize: 12 },
+      backgroundColor: cssVar('--bg-1'),
+      borderColor: cssVar('--border-1'),
+      textStyle: { color: cssVar('--text-1'), fontSize: 12 },
       extraCssText: 'box-shadow: var(--shadow-md);',
     },
     legend: {
       data: ['预测品位', '真实品位', '目标线', '警戒区间'],
       bottom: 0,
-      textStyle: { fontSize: 11, color: 'var(--text-3)' },
+      textStyle: { fontSize: 11, color: cssVar('--text-3') },
       itemWidth: 16,
       itemHeight: 3,
     },
     grid: { top: 20, right: 20, bottom: 40, left: 58 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { rotate: 30, fontSize: 11, color: 'var(--text-3)' },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      axisLabel: { rotate: 30, fontSize: 11, color: cssVar('--text-3') },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     yAxis: {
       type: 'value', name: '铅品位 (%)', min: 0,
-      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
-      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
-      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      nameTextStyle: { color: cssVar('--text-3'), fontSize: 11 },
+      splitLine: { lineStyle: { color: cssVar('--bg-3'), type: 'dashed' } },
+      axisLabel: { color: cssVar('--text-3'), fontSize: 11 },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     animation: true,
     animationDuration: 1200,
@@ -112,8 +114,8 @@ function renderTrendChart(d) {
     series: [
       {
         name: '预测品位', type: 'line', data: preds, smooth: true,
-        lineStyle: { color: 'var(--color-primary)', width: 2.5 },
-        itemStyle: { color: 'var(--color-primary)' },
+        lineStyle: { color: cssVar('--color-primary'), width: 2.5 },
+        itemStyle: { color: cssVar('--color-primary') },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(22,93,255,0.2)' },
           { offset: 1, color: 'rgba(22,93,255,0.02)' },
@@ -122,21 +124,21 @@ function renderTrendChart(d) {
       },
       {
         name: '真实品位', type: 'line', data: actuals, smooth: true,
-        lineStyle: { color: 'var(--color-success)', width: 2, type: 'dashed' },
-        itemStyle: { color: 'var(--color-success)' },
+        lineStyle: { color: cssVar('--color-success'), width: 2, type: 'dashed' },
+        itemStyle: { color: cssVar('--color-success') },
         symbol: 'diamond', symbolSize: 5,
       },
       {
         name: '目标线', type: 'line',
         data: Array(dates.length).fill(targetLine),
-        lineStyle: { color: 'var(--color-warning)', width: 1.5, type: 'dotted' },
+        lineStyle: { color: cssVar('--color-warning'), width: 1.5, type: 'dotted' },
         symbol: 'none',
         lineStep: 'middle',
       },
       {
         name: '警戒区间', type: 'line',
         data: Array(dates.length).fill(upperWarn),
-        lineStyle: { color: 'var(--color-danger)', width: 1, type: 'dashed', opacity: 0.5 },
+        lineStyle: { color: cssVar('--color-danger'), width: 1, type: 'dashed', opacity: 0.5 },
         symbol: 'none',
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(245,63,63,0.06)' },
@@ -166,22 +168,22 @@ function renderDistChart(d) {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'var(--bg-1)',
-      borderColor: 'var(--border-1)',
-      textStyle: { color: 'var(--text-1)', fontSize: 12 },
+      backgroundColor: cssVar('--bg-1'),
+      borderColor: cssVar('--border-1'),
+      textStyle: { color: cssVar('--text-1'), fontSize: 12 },
     },
     grid: { top: 20, right: 20, bottom: 35, left: 50 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { rotate: 30, fontSize: 11, color: 'var(--text-3)' },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      axisLabel: { rotate: 30, fontSize: 11, color: cssVar('--text-3') },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     yAxis: {
       type: 'value', name: '记录数',
-      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
-      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
-      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      nameTextStyle: { color: cssVar('--text-3'), fontSize: 11 },
+      splitLine: { lineStyle: { color: cssVar('--bg-3'), type: 'dashed' } },
+      axisLabel: { color: cssVar('--text-3'), fontSize: 11 },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     animation: true,
     animationDuration: 1000,
@@ -193,7 +195,7 @@ function renderDistChart(d) {
         borderRadius: [4, 4, 0, 0],
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: '#3c7dff' },
-          { offset: 1, color: 'var(--color-primary)' },
+          { offset: 1, color: cssVar('--color-primary') },
         ]),
       },
       barMaxWidth: 24,
@@ -212,29 +214,29 @@ function renderAlarmChart(d) {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'var(--bg-1)',
-      borderColor: 'var(--border-1)',
-      textStyle: { color: 'var(--text-1)', fontSize: 12 },
+      backgroundColor: cssVar('--bg-1'),
+      borderColor: cssVar('--border-1'),
+      textStyle: { color: cssVar('--text-1'), fontSize: 12 },
     },
     grid: { top: 20, right: 20, bottom: 35, left: 50 },
     xAxis: {
       type: 'category', data: dates,
-      axisLabel: { rotate: 30, fontSize: 11, color: 'var(--text-3)' },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      axisLabel: { rotate: 30, fontSize: 11, color: cssVar('--text-3') },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     yAxis: {
       type: 'value', name: '告警数',
-      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
-      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
-      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      nameTextStyle: { color: cssVar('--text-3'), fontSize: 11 },
+      splitLine: { lineStyle: { color: cssVar('--bg-3'), type: 'dashed' } },
+      axisLabel: { color: cssVar('--text-3'), fontSize: 11 },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     animation: true,
     animationDuration: 1000,
     series: [{
       type: 'line', data: counts, smooth: true,
-      lineStyle: { color: 'var(--color-danger)', width: 2 },
-      itemStyle: { color: 'var(--color-danger)' },
+      lineStyle: { color: cssVar('--color-danger'), width: 2 },
+      itemStyle: { color: cssVar('--color-danger') },
       areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
         { offset: 0, color: 'rgba(245,63,63,0.2)' },
         { offset: 1, color: 'rgba(245,63,63,0.02)' },
@@ -277,23 +279,23 @@ function renderHistogram(d) {
     tooltip: {
       trigger: 'axis',
       formatter: '{b}: {c} 条记录 ({d}%)',
-      backgroundColor: 'var(--bg-1)',
-      borderColor: 'var(--border-1)',
-      textStyle: { color: 'var(--text-1)', fontSize: 12 },
+      backgroundColor: cssVar('--bg-1'),
+      borderColor: cssVar('--border-1'),
+      textStyle: { color: cssVar('--text-1'), fontSize: 12 },
     },
     grid: { top: 20, right: 20, bottom: 30, left: 55 },
     xAxis: {
       type: 'category',
       data: buckets.map(b => b.label),
-      axisLabel: { fontSize: 11, color: 'var(--text-3)' },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3') },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     yAxis: {
       type: 'value', name: '频次',
-      nameTextStyle: { color: 'var(--text-3)', fontSize: 11 },
-      splitLine: { lineStyle: { color: 'var(--bg-3)', type: 'dashed' } },
-      axisLabel: { color: 'var(--text-3)', fontSize: 11 },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      nameTextStyle: { color: cssVar('--text-3'), fontSize: 11 },
+      splitLine: { lineStyle: { color: cssVar('--bg-3'), type: 'dashed' } },
+      axisLabel: { color: cssVar('--text-3'), fontSize: 11 },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
     },
     animation: true,
     animationDuration: 1200,
@@ -303,14 +305,14 @@ function renderHistogram(d) {
       itemStyle: {
         borderRadius: [5, 5, 0, 0],
         color: function(params) {
-          const colors = ['var(--text-3)', 'var(--color-primary)', 'var(--color-success)', 'var(--color-warning)', 'var(--color-danger)', '#722ed1']
-          return colors[params.dataIndex] || 'var(--color-primary)'
+          const colors = [cssVar('--text-3'), cssVar('--color-primary'), cssVar('--color-success'), cssVar('--color-warning'), cssVar('--color-danger'), '#722ed1']
+          return colors[params.dataIndex] || cssVar('--color-primary')
         },
       },
       barMaxWidth: 40,
       label: {
         show: true, position: 'top', fontSize: 11,
-        color: 'var(--text-3)', fontWeight: 600,
+        color: cssVar('--text-3'), fontWeight: 600,
       },
     }],
   }, true)
@@ -335,9 +337,9 @@ const kpis = computed(() => {
   if (!report.value?.overview) return []
   const o = report.value.overview
   return [
-    { icon: 'Document', label: '分析记录总数', value: o.total_records ?? 0, unit: '条', color: 'var(--color-primary)', format: 'int' },
-    { icon: 'Calendar', label: '日均分析量', value: o.avg_records_per_day ?? 0, unit: '条/天', color: 'var(--color-success)', format: 'int' },
-    { icon: 'TrendCharts', label: '平均预测品位', value: o.overall_avg_pred ?? 0, unit: '%', color: 'var(--color-warning)', format: 'float' },
+    { icon: 'Document', label: '分析记录总数', value: o.total_records ?? 0, unit: '条', color: cssVar('--color-primary'), format: 'int' },
+    { icon: 'Calendar', label: '日均分析量', value: o.avg_records_per_day ?? 0, unit: '条/天', color: cssVar('--color-success'), format: 'int' },
+    { icon: 'TrendCharts', label: '平均预测品位', value: o.overall_avg_pred ?? 0, unit: '%', color: cssVar('--color-warning'), format: 'float' },
     { icon: 'Select', label: '平均真实品位', value: o.overall_avg_actual ?? 0, unit: '%', color: '#722ed1', format: 'float' },
   ]
 })

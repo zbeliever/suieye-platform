@@ -436,6 +436,7 @@
 </template>
 
 <script setup>
+
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
@@ -728,7 +729,7 @@ function renderTrend() {
   const times = (series[0].points || []).map((p) => fmtTs(p.ts))
   const yAxis = []
   const sers = []
-  const colors = [cssVar('--chart-1', 'var(--color-primary)'), cssVar('--chart-2', 'var(--text-3)')]
+  const colors = [cssVar('--chart-1', cssVar('--color-primary')), cssVar('--chart-2', cssVar('--text-3'))]
 
   series.forEach((s, i) => {
     yAxis.push({
@@ -736,20 +737,20 @@ function renderTrend() {
       scale: true,
       position: i === 0 ? 'left' : 'right',
       // 轴名改挂到图例（避免与右上角图例重叠）
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-      splitLine: i === 0 ? { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } } : { show: false },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+      splitLine: i === 0 ? { lineStyle: { color: cssVar('--border-2', cssVar('--bg-3')) } } : { show: false },
     })
 
     const markLines = []
     if (i === 0) {
       if (s.warn_hi !== null && s.warn_hi !== undefined)
-        markLines.push({ yAxis: s.warn_hi, label: { formatter: `预警 ${s.warn_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.warn_hi, label: { formatter: `预警 ${s.warn_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', cssVar('--color-warning')), type: 'dashed', width: 1 } })
       if (s.warn_lo !== null && s.warn_lo !== undefined)
-        markLines.push({ yAxis: s.warn_lo, label: { formatter: `预警 ${s.warn_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.warn_lo, label: { formatter: `预警 ${s.warn_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-warning', cssVar('--color-warning')), type: 'dashed', width: 1 } })
       if (s.danger_hi !== null && s.danger_hi !== undefined)
-        markLines.push({ yAxis: s.danger_hi, label: { formatter: `危险 ${s.danger_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', 'var(--color-danger)'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.danger_hi, label: { formatter: `危险 ${s.danger_hi}`, position: 'insideEndTop', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', cssVar('--color-danger')), type: 'dashed', width: 1 } })
       if (s.danger_lo !== null && s.danger_lo !== undefined)
-        markLines.push({ yAxis: s.danger_lo, label: { formatter: `危险 ${s.danger_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', 'var(--color-danger)'), type: 'dashed', width: 1 } })
+        markLines.push({ yAxis: s.danger_lo, label: { formatter: `危险 ${s.danger_lo}`, position: 'insideEndBottom', fontSize: 10 }, lineStyle: { color: cssVar('--color-danger', cssVar('--color-danger')), type: 'dashed', width: 1 } })
     }
 
     sers.push({
@@ -769,14 +770,14 @@ function renderTrend() {
   trendChart.setOption(
     {
       tooltip: { trigger: 'axis' },
-      legend: { show: series.length > 1, top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') } },
+      legend: { show: series.length > 1, top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) } },
       grid: { top: series.length > 1 ? 30 : 26, right: series.length > 1 ? 56 : 46, bottom: 30, left: 54 },
       xAxis: {
         type: 'category',
         data: times,
         boundaryGap: false,
-        axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
-        axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
+        axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')), hideOverlap: true },
+        axisLine: { lineStyle: { color: cssVar('--border-1', cssVar('--border-1')) } },
       },
       yAxis,
       series: sers,
@@ -793,22 +794,22 @@ function renderTrack() {
   trackChart.setOption(
     {
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') } },
+      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) } },
       grid: { top: 30, right: 20, bottom: 28, left: 48 },
       xAxis: {
         type: 'category',
         data: times,
         boundaryGap: false,
-        axisLabel: { fontSize: 10, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
-        axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
+        axisLabel: { fontSize: 10, color: cssVar('--text-3', cssVar('--text-3')), hideOverlap: true },
+        axisLine: { lineStyle: { color: cssVar('--border-1', cssVar('--border-1')) } },
       },
       yAxis: {
         type: 'value',
         scale: true,
         name: '%',
-        nameTextStyle: { fontSize: 10, color: cssVar('--text-3', 'var(--text-3)') },
-        axisLabel: { fontSize: 10, color: cssVar('--text-3', 'var(--text-3)') },
-        splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
+        nameTextStyle: { fontSize: 10, color: cssVar('--text-3', cssVar('--text-3')) },
+        axisLabel: { fontSize: 10, color: cssVar('--text-3', cssVar('--text-3')) },
+        splitLine: { lineStyle: { color: cssVar('--border-2', cssVar('--bg-3')) } },
       },
       series: [
         {
@@ -817,8 +818,8 @@ function renderTrack() {
           smooth: true,
           showSymbol: false,
           data: track.map((p) => p.actual),
-          lineStyle: { width: 2, color: cssVar('--chart-1', 'var(--color-primary)') },
-          itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)') },
+          lineStyle: { width: 2, color: cssVar('--chart-1', cssVar('--color-primary')) },
+          itemStyle: { color: cssVar('--chart-1', cssVar('--color-primary')) },
         },
         {
           name: '模型预测',
@@ -826,8 +827,8 @@ function renderTrack() {
           smooth: true,
           showSymbol: false,
           data: track.map((p) => p.predicted),
-          lineStyle: { width: 1.5, color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed' },
-          itemStyle: { color: cssVar('--color-warning', 'var(--color-warning)') },
+          lineStyle: { width: 1.5, color: cssVar('--color-warning', cssVar('--color-warning')), type: 'dashed' },
+          itemStyle: { color: cssVar('--color-warning', cssVar('--color-warning')) },
         },
       ],
     },
@@ -846,22 +847,22 @@ function renderForecast() {
   fcChart.setOption(
     {
       tooltip: { trigger: 'axis' },
-      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') } },
+      legend: { top: 0, right: 8, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) } },
       grid: { top: 30, right: 46, bottom: 30, left: 54 },
       xAxis: {
         type: 'category',
         data: times,
         boundaryGap: false,
-        axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
-        axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
+        axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')), hideOverlap: true },
+        axisLine: { lineStyle: { color: cssVar('--border-1', cssVar('--border-1')) } },
       },
       yAxis: {
         type: 'value',
         scale: true,
         name: unit,
-        nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-        axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-        splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
+        nameTextStyle: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+        axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+        splitLine: { lineStyle: { color: cssVar('--border-2', cssVar('--bg-3')) } },
       },
       series: [
         {
@@ -870,8 +871,8 @@ function renderForecast() {
           smooth: true,
           showSymbol: false,
           data: fc.baseline.map((p) => p[key]),
-          lineStyle: { width: 2, color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed' },
-          itemStyle: { color: cssVar('--color-warning', 'var(--color-warning)') },
+          lineStyle: { width: 2, color: cssVar('--color-warning', cssVar('--color-warning')), type: 'dashed' },
+          itemStyle: { color: cssVar('--color-warning', cssVar('--color-warning')) },
         },
         {
           name: '采纳推荐',
@@ -879,8 +880,8 @@ function renderForecast() {
           smooth: true,
           showSymbol: false,
           data: fc.recommended.map((p) => p[key]),
-          lineStyle: { width: 2, color: cssVar('--chart-1', 'var(--color-primary)') },
-          itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)') },
+          lineStyle: { width: 2, color: cssVar('--chart-1', cssVar('--color-primary')) },
+          itemStyle: { color: cssVar('--chart-1', cssVar('--color-primary')) },
           areaStyle: { color: cssVar('--chart-1-bg', '#e8f3ff'), opacity: 0.4 },
         },
       ],

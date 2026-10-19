@@ -1,4 +1,6 @@
 <script setup>
+import { cssVar } from '../utils/chartColor'
+
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
@@ -378,9 +380,9 @@ function renderTrendChart() {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'var(--bg-1)',
-      borderColor: 'var(--border-1)',
-      textStyle: { color: 'var(--text-1)', fontSize: 13 },
+      backgroundColor: cssVar('--bg-1'),
+      borderColor: cssVar('--border-1'),
+      textStyle: { color: cssVar('--text-1'), fontSize: 13 },
       valueFormatter: (v) => `${v} %`,
     },
     grid: { top: 16, right: 14, bottom: 28, left: 48 },
@@ -388,17 +390,17 @@ function renderTrendChart() {
       type: 'category',
       data: dates,
       boundaryGap: false,
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
       axisTick: { show: false },
-      axisLabel: { color: 'var(--text-3)', fontSize: 12, interval: Math.ceil(dates.length / 8) },
+      axisLabel: { color: cssVar('--text-3'), fontSize: 12, interval: Math.ceil(dates.length / 8) },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      splitLine: { lineStyle: { color: 'var(--bg-3)' } },
+      splitLine: { lineStyle: { color: cssVar('--bg-3') } },
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: 'var(--text-3)', fontSize: 12 },
+      axisLabel: { color: cssVar('--text-3'), fontSize: 12 },
     },
     series: [
       {
@@ -407,7 +409,7 @@ function renderTrendChart() {
         data: actual,
         smooth: true,
         symbol: 'none',
-        lineStyle: { color: 'var(--text-4)', width: 1.6, type: 'dashed' },
+        lineStyle: { color: cssVar('--text-4'), width: 1.6, type: 'dashed' },
       },
       {
         name: '模型预测',
@@ -417,8 +419,8 @@ function renderTrendChart() {
         symbol: 'circle',
         symbolSize: 5,
         showSymbol: false,
-        lineStyle: { color: 'var(--color-primary)', width: 2.2 },
-        itemStyle: { color: 'var(--color-primary)' },
+        lineStyle: { color: cssVar('--color-primary'), width: 2.2 },
+        itemStyle: { color: cssVar('--color-primary') },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(22,93,255,0.10)' },

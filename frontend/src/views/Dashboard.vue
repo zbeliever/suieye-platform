@@ -1,4 +1,6 @@
 <script setup>
+import { cssVar } from '../utils/chartColor'
+
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
@@ -55,13 +57,13 @@ function diffText(today, yesterday) {
   return d > 0 ? `↑ ${pct}%` : `↓ ${Math.abs(pct)}%`
 }
 function diffColor(today, yesterday, inverse = false) {
-  if (yesterday == null) return 'var(--text-3)'
+  if (yesterday == null) return cssVar('--text-3')
   const d = today - yesterday
-  if (d === 0) return 'var(--text-3)'
+  if (d === 0) return cssVar('--text-3')
   const good = d > 0
   const bad = d < 0
-  if (inverse) return bad ? 'var(--color-danger)' : 'var(--color-success)'
-  return good ? 'var(--color-success)' : 'var(--color-danger)'
+  if (inverse) return bad ? cssVar('--color-danger') : cssVar('--color-success')
+  return good ? cssVar('--color-success') : cssVar('--color-danger')
 }
 
 // 场景状态中文名（status 由后端 scene_packages 注册表透传）
@@ -149,25 +151,25 @@ function fillKPIs() {
   const rate = ((online / total) * 100).toFixed(0)
   kpis.value[1].value = `${rate}%`
   kpis.value[1].sub = `${online}/${total}台 · 危险${eq.danger || 0}`
-  kpis.value[1].subColor = 'var(--text-3)'
+  kpis.value[1].subColor = cssVar('--text-3')
 
   const todaySafety = ss.today_count || 0
   const totalSafety = ss.total_count || 0
   kpis.value[2].value = todaySafety.toLocaleString()
   kpis.value[2].sub = `累计${totalSafety} · 隐患${ss.hazard_open || 0}`
-  kpis.value[2].subColor = 'var(--text-3)'
+  kpis.value[2].subColor = cssVar('--text-3')
 
   const unack = t.alarms?.unacknowledged || 0
   const totalAlarm = t.alarms?.total || 0
   kpis.value[3].value = unack > 0 ? `${unack} 条` : '无'
   kpis.value[3].sub = `今日共 ${totalAlarm} 条`
-  kpis.value[3].subColor = unack > 0 ? 'var(--color-danger)' : 'var(--color-success)'
+  kpis.value[3].subColor = unack > 0 ? cssVar('--color-danger') : cssVar('--color-success')
 
   const pbAvg = t.flotation?.pb_grade?.avg
   const yestPbAvg = y.flotation?.pb_grade?.avg
   kpis.value[4].value = pbAvg != null ? pbAvg.toFixed(2) : '—'
   kpis.value[4].sub = yestPbAvg != null ? diffText(pbAvg, yestPbAvg) : '昨日无数据'
-  kpis.value[4].subColor = yestPbAvg != null ? diffColor(pbAvg, yestPbAvg) : 'var(--text-3)'
+  kpis.value[4].subColor = yestPbAvg != null ? diffColor(pbAvg, yestPbAvg) : cssVar('--text-3')
 
   const currentShift = shifts.value.find(s => {
     const now = new Date().getHours()
@@ -180,7 +182,7 @@ function fillKPIs() {
   const pct = Math.min(100, (shiftRecords / target) * 100).toFixed(0)
   kpis.value[5].value = `${pct}%`
   kpis.value[5].sub = `${(currentShift?.shift_label || '当前班').split(' ')[0]} ${shiftRecords}/${target}`
-  kpis.value[5].subColor = pct >= 100 ? 'var(--color-success)' : (pct >= 50 ? 'var(--color-warning)' : 'var(--color-danger)')
+  kpis.value[5].subColor = pct >= 100 ? cssVar('--color-success') : (pct >= 50 ? cssVar('--color-warning') : cssVar('--color-danger'))
 }
 
 // ---- 水质：评分等级（与 WaterMonitor.vue 保持一致，避免两页口径不一） ----
@@ -201,14 +203,14 @@ function goRoute(route) {
 
 // ---- ECharts 渲染（配色收敛到 3 色：主色 + 中性灰 + 状态色） ----
 function renderCharts() {
-  const C1 = getComputedStyle(document.documentElement).getPropertyValue('--chart-1').trim() || 'var(--color-primary)'
-  const C2 = getComputedStyle(document.documentElement).getPropertyValue('--chart-2').trim() || 'var(--text-3)'
-  const C3 = getComputedStyle(document.documentElement).getPropertyValue('--chart-3').trim() || 'var(--color-success)'
-  const CDANGER = getComputedStyle(document.documentElement).getPropertyValue('--chart-danger').trim() || 'var(--color-danger)'
-  const CWARN = getComputedStyle(document.documentElement).getPropertyValue('--chart-warning').trim() || 'var(--color-warning)'
+  const C1 = getComputedStyle(document.documentElement).getPropertyValue('--chart-1').trim() || cssVar('--color-primary')
+  const C2 = getComputedStyle(document.documentElement).getPropertyValue('--chart-2').trim() || cssVar('--text-3')
+  const C3 = getComputedStyle(document.documentElement).getPropertyValue('--chart-3').trim() || cssVar('--color-success')
+  const CDANGER = getComputedStyle(document.documentElement).getPropertyValue('--chart-danger').trim() || cssVar('--color-danger')
+  const CWARN = getComputedStyle(document.documentElement).getPropertyValue('--chart-warning').trim() || cssVar('--color-warning')
   const C1LIGHT = getComputedStyle(document.documentElement).getPropertyValue('--chart-1-light').trim() || '#94b8ff'
-  const TEXT3 = getComputedStyle(document.documentElement).getPropertyValue('--text-3').trim() || 'var(--text-3)'
-  const BORDER = getComputedStyle(document.documentElement).getPropertyValue('--border-1').trim() || 'var(--border-1)'
+  const TEXT3 = getComputedStyle(document.documentElement).getPropertyValue('--text-3').trim() || cssVar('--text-3')
+  const BORDER = getComputedStyle(document.documentElement).getPropertyValue('--border-1').trim() || cssVar('--border-1')
 
   // 1. 铅品位趋势（主色 + 中性灰对比）
   if (trendChartRef.value) {

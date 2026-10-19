@@ -262,6 +262,7 @@
 </template>
 
 <script setup>
+
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
@@ -434,10 +435,10 @@ function renderTrend() {
 
   const markLines = []
   if (th.warn != null) {
-    markLines.push({ yAxis: th.warn, label: { formatter: `预警 ${th.warn}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-warning', 'var(--color-warning)'), type: 'dashed', width: 1 } })
+    markLines.push({ yAxis: th.warn, label: { formatter: `预警 ${th.warn}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-warning', cssVar('--color-warning')), type: 'dashed', width: 1 } })
   }
   if (th.danger != null) {
-    markLines.push({ yAxis: th.danger, label: { formatter: `危险 ${th.danger}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-danger', 'var(--color-danger)'), type: 'dashed', width: 1 } })
+    markLines.push({ yAxis: th.danger, label: { formatter: `危险 ${th.danger}`, position: 'insideEndTop', fontSize: 11 }, lineStyle: { color: cssVar('--color-danger', cssVar('--color-danger')), type: 'dashed', width: 1 } })
   }
 
   trendChart.setOption({
@@ -445,21 +446,21 @@ function renderTrend() {
     grid: { top: 26, right: 46, bottom: 34, left: 54 },
     xAxis: {
       type: 'category', data: times, boundaryGap: false,
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)'), hideOverlap: true },
-      axisLine: { lineStyle: { color: cssVar('--border-1', 'var(--border-1)') } },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')), hideOverlap: true },
+      axisLine: { lineStyle: { color: cssVar('--border-1', cssVar('--border-1')) } },
     },
     yAxis: {
       type: 'value', scale: true,
       name: th.unit || '',
-      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-      splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
+      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+      splitLine: { lineStyle: { color: cssVar('--border-2', cssVar('--bg-3')) } },
     },
     series: [{
       name: th.label || metric.value,
       type: 'line', smooth: true, showSymbol: false, data: values,
-      lineStyle: { width: 2, color: cssVar('--chart-1', 'var(--color-primary)') },
-      itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)') },
+      lineStyle: { width: 2, color: cssVar('--chart-1', cssVar('--color-primary')) },
+      itemStyle: { color: cssVar('--chart-1', cssVar('--color-primary')) },
       areaStyle: { color: cssVar('--chart-1-bg', '#e8f3ff'), opacity: 0.6 },
       markLine: markLines.length ? { silent: true, symbol: 'none', data: markLines } : undefined,
     }],
@@ -480,19 +481,19 @@ function renderScatter() {
     grid: { top: 16, right: 20, bottom: 34, left: 54 },
     xAxis: {
       type: 'value', scale: true, name: `${bm?.label || ''}${bm?.unit ? ' (' + bm.unit + ')' : ''}`,
-      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-      splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
+      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+      splitLine: { lineStyle: { color: cssVar('--border-2', cssVar('--bg-3')) } },
     },
     yAxis: {
       type: 'value', scale: true, name: '铅品位 %',
-      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-      axisLabel: { fontSize: 11, color: cssVar('--text-3', 'var(--text-3)') },
-      splitLine: { lineStyle: { color: cssVar('--border-2', 'var(--bg-3)') } },
+      nameTextStyle: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+      axisLabel: { fontSize: 11, color: cssVar('--text-3', cssVar('--text-3')) },
+      splitLine: { lineStyle: { color: cssVar('--border-2', cssVar('--bg-3')) } },
     },
     series: [{
       type: 'scatter', data: pts, symbolSize: 9,
-      itemStyle: { color: cssVar('--chart-1', 'var(--color-primary)'), opacity: 0.75 },
+      itemStyle: { color: cssVar('--chart-1', cssVar('--color-primary')), opacity: 0.75 },
     }],
   }, true)
 }

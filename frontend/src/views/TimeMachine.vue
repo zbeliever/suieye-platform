@@ -1,4 +1,6 @@
 <script setup>
+import { cssVar } from '../utils/chartColor'
+
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElDialog, ElMessage } from 'element-plus'
@@ -318,19 +320,19 @@ function renderTrendChart() {
       grid: { top: 10, right: 10, bottom: 22, left: 40 },
       xAxis: {
         type: 'category', data: dates,
-        axisLabel: { fontSize: 9, color: 'var(--text-3)', rotate: 30 },
-        axisLine: { lineStyle: { color: 'var(--border-1)' } }, axisTick: { show: false },
+        axisLabel: { fontSize: 9, color: cssVar('--text-3'), rotate: 30 },
+        axisLine: { lineStyle: { color: cssVar('--border-1') } }, axisTick: { show: false },
       },
       yAxis: {
         type: 'value', name: 'P80(μm)',
-        nameTextStyle: { fontSize: 10, color: 'var(--text-3)' },
-        splitLine: { lineStyle: { color: 'var(--bg-3)' } },
-        axisLabel: { fontSize: 9, color: 'var(--text-3)' }, axisLine: { show: false },
+        nameTextStyle: { fontSize: 10, color: cssVar('--text-3') },
+        splitLine: { lineStyle: { color: cssVar('--bg-3') } },
+        axisLabel: { fontSize: 9, color: cssVar('--text-3') }, axisLine: { show: false },
       },
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'var(--bg-1)', borderColor: 'var(--border-1)',
-        textStyle: { color: 'var(--text-1)', fontSize: 11 },
+        backgroundColor: cssVar('--bg-1'), borderColor: cssVar('--border-1'),
+        textStyle: { color: cssVar('--text-1'), fontSize: 11 },
         extraCssText: 'box-shadow: var(--shadow-md);',
       },
       series: [{
@@ -365,23 +367,23 @@ function renderTrendChart() {
     xAxis: {
       type: 'category',
       data: dates,
-      axisLabel: { fontSize: 9, color: 'var(--text-3)', rotate: 30 },
-      axisLine: { lineStyle: { color: 'var(--border-1)' } },
+      axisLabel: { fontSize: 9, color: cssVar('--text-3'), rotate: 30 },
+      axisLine: { lineStyle: { color: cssVar('--border-1') } },
       axisTick: { show: false },
     },
     yAxis: {
       type: 'value',
       name: 'Pb%',
-      nameTextStyle: { fontSize: 10, color: 'var(--text-3)' },
-      splitLine: { lineStyle: { color: 'var(--bg-3)' } },
-      axisLabel: { fontSize: 9, color: 'var(--text-3)' },
+      nameTextStyle: { fontSize: 10, color: cssVar('--text-3') },
+      splitLine: { lineStyle: { color: cssVar('--bg-3') } },
+      axisLabel: { fontSize: 9, color: cssVar('--text-3') },
       axisLine: { show: false },
     },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'var(--bg-1)',
-      borderColor: 'var(--border-1)',
-      textStyle: { color: 'var(--text-1)', fontSize: 11 },
+      backgroundColor: cssVar('--bg-1'),
+      borderColor: cssVar('--border-1'),
+      textStyle: { color: cssVar('--text-1'), fontSize: 11 },
       extraCssText: 'box-shadow: var(--shadow-md);',
     },
     series: [{
@@ -390,8 +392,8 @@ function renderTrendChart() {
       smooth: true,
       symbol: 'circle',
       symbolSize: 5,
-      lineStyle: { color: 'var(--color-primary)', width: 2 },
-      itemStyle: { color: 'var(--color-primary)' },
+      lineStyle: { color: cssVar('--color-primary'), width: 2 },
+      itemStyle: { color: cssVar('--color-primary') },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(22,93,255,0.15)' },

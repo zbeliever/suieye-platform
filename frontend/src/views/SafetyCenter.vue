@@ -1,4 +1,6 @@
 <script setup>
+import { cssVar } from '../utils/chartColor'
+
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -105,8 +107,8 @@ function goReplay() {
 
 // ---- 格式化 ----
 const camStatusDot = (status) => ({
-  normal: 'var(--color-success)', warning: 'var(--color-warning)', danger: 'var(--color-danger)',
-}[status] || 'var(--text-3)')
+  normal: cssVar('--color-success'), warning: cssVar('--color-warning'), danger: cssVar('--color-danger'),
+}[status] || cssVar('--text-3'))
 
 const camStatusLabel = (status) => ({
   normal: '正常运行', warning: '关注', danger: '告警',
