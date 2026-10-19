@@ -489,15 +489,20 @@ const latestTip = computed(() => {
 })
 
 /**
- * 全厂结论条 —— 门面的"一句话"。
+ * 全厂「需关注项」计数 —— 供 CTA 左侧那枚胶囊使用。
  *
- * ★ 为什么需要它：四个 KPI 各自是数字，但访客看完仍然不知道"现在好不好"。
- *   结论条把这四个数**归并成一个判断**，并给出最值得关注的那一条。
+ * ★ 前身是卡底 30px 的「结论条」（有设备故障需处理 / 1 台设备故障 / …）。
+ *   2026-10-19 老板拍板删掉：「这是整个系统的门面，一直摆着这个红条不太好看」。
+ *   红条的问题不在信息，在语汇 —— 警报横幅属于运维台，门面每天挂一条红等于天天报警，
+ *   而且它把 3D 画面从中间切成两段。
  *
- * ★ 口径：判断规则全部来自真实字段，不引入任何编造的"综合评分"：
+ * ★ 现在门面只保留「几项需要关注」这一个数字，明细放进胶囊的 title；
+ *   点击进 /alarms。正常时（count=0）整枚胶囊不渲染，门面就是一块干净页头。
+ *
+ * ★ 口径未变，全部来自真实字段，不引入任何编造的"综合评分"：
  *   · 设备有 danger（故障）→ 最高优先级，因为直接影响产能
- *   · 品位最新值明显低于历史均值 → 工艺波动，提示关注
- *   · 水质有 danger/异常点位 → 环保相关，单独提示
+ *   · 品位最新值明显低于历史均值（<85%）→ 工艺波动，提示关注
+ *   · 水质有异常点位 → 环保相关，单独提示
  *   · 都不触发 → 正常
  */
 const plantVerdict = computed(() => {
@@ -520,16 +525,13 @@ const plantVerdict = computed(() => {
   }
 
   const bad = notes.filter(n => n.level === 'danger').length
-  const level = bad ? 'danger' : (notes.length ? 'warn' : 'ok')
-  const head = level === 'ok' ? '全厂运行正常' : (level === 'danger' ? '有设备故障需处理' : '整体正常 · 需关注个别项')
-
-  const shown = notes.slice(0, 3)
   return {
-    level,
-    head,
-    notes: shown,
-    // ★ 超过 3 条时如实报"另 N 项"：门面最忌"少了一条没人知道"
-    more: notes.length > shown.length ? `另 ${notes.length - shown.length} 项` : '',
+    level: bad ? 'danger' : (notes.length ? 'warn' : 'ok'),
+    count: notes.length,
+    // ★ 明细一条不丢：4 项都进 title（原结论条只显示前 3 条 + "另 N 项"）
+    detail: notes.length
+      ? notes.map(n => n.text).join(' · ') + '（点击查看告警）'
+      : '',
   }
 })
 
@@ -4707,8 +4709,28 @@ function healthColor(h) {
              门面不该出现；需要它们时进 /monitor 或 /dashboard，各自都有。
              ★ 2026-10-19 拍板（老板）：门面是展示层，下一步该去另一块展示层。
                汇报动线 = 门面(讲厂区) → 直播墙(讲全厂运行) → 各专题页；
-               操作台则从"空间对象"进（点立杆看那路画面、点浮选段看那段工艺）。 -->
+               操作台则从"空间对象"进（点立杆看那路画面、点浮选段看那段工艺）。
+             ★★ 2026-10-19 二次改版：删掉卡底 30px 红条（「有设备故障需处理 …」）。
+                老板：「这是整个系统的门面，一直摆着这个红条不太好看」。
+                红条是**警报语汇**，门面每天挂一条红等于天天报警；而且它把 3D 切成两段。
+                异常改为 CTA 左侧一枚胶囊：有异常才出现、只有 22px 高、点进告警。
+                异常明细四项在别处均有落点（HUD 运行工况 / 两个 KPI 格的副行），不丢信息。 -->
         <div class="fh-actions">
+          <router-link
+            v-if="kpiReady && plantVerdict.count > 0"
+            to="/alarms"
+            class="fh-alert"
+            :class="`is-${plantVerdict.level}`"
+            :title="plantVerdict.detail"
+          >
+            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+              <path d="M8 2.3 14.3 13.3H1.7L8 2.3Z" fill="none" stroke="currentColor"
+                stroke-width="1.5" stroke-linejoin="round" />
+              <path d="M8 6.3v3.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              <circle cx="8" cy="11.3" r="0.85" fill="currentColor" />
+            </svg>
+            <span>{{ plantVerdict.count }} 项需关注</span>
+          </router-link>
           <router-link to="/livewall" class="fh-cta">
             <span>进入直播墙</span>
             <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
@@ -4717,24 +4739,6 @@ function healthColor(h) {
             </svg>
           </router-link>
         </div>
-      </div>
-
-      <!-- ══ 卡底状态带 ══
-           ★ 门面的"一句话"：四个 KPI 是数字，这一条把它们归并成判断，
-             并点出最值得注意的那一两项。访客不用自己比对数字就知道"现在好不好"。
-           ★★ 2026-10-19 二次重设计：从"通栏横幅"降级为"卡底脚注"——
-              宽度跟着卡走（不再左右贴屏把画面切成两段）、左侧 3px 状态竖条、
-              圆点去掉（竖条已表达状态，两个状态标记是冗余）。
-           ★ 老板拍板：level=ok 时**整条不渲染**，正常状态下门面就是一块干净页头，
-              省下的 30px 全给 3D 画面。 -->
-      <div class="fc-verdict" :class="`is-${plantVerdict.level}`"
-        v-if="kpiReady && plantVerdict.level !== 'ok'">
-        <strong class="vb-head">{{ plantVerdict.head }}</strong>
-        <span class="vb-sep" v-if="plantVerdict.notes.length" aria-hidden="true"></span>
-        <span v-for="(n, i) in plantVerdict.notes" :key="i" class="vb-note" :class="`is-${n.level}`">
-          {{ n.text }}
-        </span>
-        <span class="vb-more" v-if="plantVerdict.more">{{ plantVerdict.more }}</span>
       </div>
     </header>
 
@@ -5429,26 +5433,25 @@ const typeNames = {
 .fc-main > .brand-block { flex-shrink: 0; }
 
 /* 四格 KPI：等宽分栏（个数已知 → 用 repeat(4, ...)，避免 auto-fill 造出孤立格）
-   ★ 层级：品牌那条竖线用 --border-1（跨组分隔），格间用 --border-2（同组内分栏）。
-     两条一样重会变成表格。 */
+   ★★ 2026-10-19 二次改版：格间竖线全部去掉，改用留白分隔。
+      原因：品牌区 1 条 + 四格 3 条 = 4 条等重竖线，把 1400px 的卡切成 5 段，
+      读起来像表格而不是仪表盘；而且和下面要被删掉的红条抢注意力。
+      现在只保留**一条**竖线（品牌区与数据区之间），它是"标识 / 数据"的分界。 */
 .fh-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
+  column-gap: 26px;
   flex: 1;
   min-width: 0;
   border-left: 1px solid var(--border-1);
-  padding-left: 18px;
+  padding-left: 22px;
 }
 .fh-kpi {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 0 16px;
   min-width: 0;
-  border-right: 1px solid var(--border-2);
 }
-.fh-kpi:last-child { border-right: none; }
 .fk-label {
   font-size: 11px;
   color: var(--text-3);
@@ -5487,8 +5490,14 @@ const typeNames = {
   text-overflow: ellipsis;
 }
 
-/* 右侧唯一去处 */
-.fh-actions { flex-shrink: 0; }
+/* 右侧：异常胶囊 + 唯一去处
+   ★ 胶囊与 CTA 之间 10px，两者高度一致（32/22 差在视觉上太碎，胶囊用 22 居中） */
+.fh-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
 .fh-cta {
   display: inline-flex;
   align-items: center;
@@ -5508,60 +5517,36 @@ const typeNames = {
 .fh-cta:hover svg { transform: translateX(2px); }
 .fh-cta svg { transition: transform var(--transition); }
 
-/* ── 卡底状态带 ──
-   ★★ 从"通栏横幅"降级为"卡底脚注"：
-     旧版左右 margin 都是 0、宽 100%，把 3D 画面切成两段，读起来像事故横幅。
-     新版宽度跟着卡走、左侧 3px 状态竖条；圆点去掉（竖条已表达状态，两个标记是冗余）。
-   ★ 老板拍板：level=ok 时整条不渲染 —— 正常状态下门面就是一块干净页头。 */
-.fc-verdict {
-  position: relative;
-  display: flex;
+/* ── 异常胶囊（2026-10-19 替代卡底 30px 红条）──
+   ★ 老板：门面一直摆着红条不好看。红条的问题不在信息，在语汇 ——
+     警报横幅属于运维台，门面每天挂一条红等于天天报警。
+   ★ 现在只在 count > 0 时渲染一枚 22px 胶囊：正常时门面完全干净，
+     有异常时可点（进 /alarms），明细在 title 里（hover 可见），一条不丢。
+   ★ 不用实心红：门面的主角是厂区，胶囊只是"有个入口"，不该比 CTA 更抢。 */
+.fh-alert {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 20px;
-  font-size: 12px;
-  color: var(--text-2);
-  background: var(--bg-2);
-  border-top: 1px solid var(--border-1);
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--transition), border-color var(--transition);
 }
-.fc-verdict::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--color-success);
-}
-.fc-verdict.is-warn {
+.fh-alert.is-warn {
+  color: var(--color-warning-deep);
   background: var(--color-warning-light);
-  border-top-color: var(--color-warning-border);
+  border: 1px solid var(--color-warning-border);
 }
-.fc-verdict.is-warn::before { background: var(--color-warning); }
-.fc-verdict.is-danger {
+.fh-alert.is-danger {
+  color: var(--color-danger-deep);
   background: var(--color-danger-light);
-  border-top-color: var(--color-danger-border);
+  border: 1px solid var(--color-danger-border);
 }
-.fc-verdict.is-danger::before { background: var(--color-danger); }
-.vb-head { font-weight: 600; color: var(--text-1); white-space: nowrap; }
-.vb-sep {
-  width: 1px;
-  height: 11px;
-  background: var(--border-1);
-  flex-shrink: 0;
-  margin: 0 2px;
-}
-.vb-note { color: var(--text-2); white-space: nowrap; }
-.vb-note.is-warn { color: var(--color-warning-deep); }
-.vb-note.is-danger { color: var(--color-danger-deep); font-weight: 500; }
-/* 多条之间用细分隔点，别用逗号（中文逗号在这类短摘要里会被误读成句子结束） */
-.vb-note + .vb-note::before {
-  content: '·';
-  margin-right: 8px;
-  color: var(--text-4);
-}
-.vb-more { color: var(--text-3); white-space: nowrap; }
+.fh-alert:hover { filter: saturate(1.25) brightness(0.98); }
 
 /* 窄屏（≤1200）：卡内换成两行，KPI 独占一行，避免四格被挤成竖排 */
 @media (max-width: 1200px) {
@@ -5573,9 +5558,7 @@ const typeNames = {
     padding: 8px 0 0;
     border-top: 1px solid var(--border-1);
   }
-  .fh-kpi:first-child { padding-left: 0; }
   .fh-actions { margin-left: auto; }
-  .fc-verdict { padding: 0 16px; }
 }
 
 /* ── 旧工具栏样式（.toolbar/.stat-chips/.page-title）已随「设备监测中心」页头一并移除。
