@@ -143,6 +143,99 @@ def list_records(
     }
 
 
+@router.get("/api/scenes/{scene_name}/latest")
+def scene_latest(
+    scene_name: str,
+    db: Session = Depends(get_db),
+    field: str = Query("pb_grade_xrf", description="prediction 内字段名，兼容旧字段 pb_grade"),
+    min_value: float = Query(None, alias="min", description="口径下限，默认取 settings.PB_GRADE_MIN"),
+    max_value: float = Query(None, alias="max", description="口径上限，默认取 settings.PB_GRADE_MAX"),
+    max_scan: int = Query(500, ge=1, le=5000, description="最多回看多少条"),
+):
+    """取「口径内」最近一条分析记录。
+
+    ★ 为什么需要这个接口（2026-10-19，老板拍板方案 A）：
+      门面 KPI「最新一次分析」原来直接取 `records?limit=1`。但 `/api/analyze`
+      产生的 upload 记录是**真模型输出**，实测 Pb 1.69~1.84%，落在 3~8% 演示口径之外；
+      而同一格的「均值 5.23%」来自 actual_value（XRF 实测真值）。
+      于是门面左手写"均值 5.23%"、右手写"最新 1.79%"，结论条还冒出红字
+      「最新品位低于均值 66%」—— 第一屏就自相矛盾，访客只会认定"数据是假的"。
+
+    ★ 口径在取数层过滤，**库里一条真值都不改**：
+      - 那些口径外记录仍在 `/records`、工况时光机里完整可查；
+      - 响应里如实带回 `skipped`（跳过了几条口径外）与 `scanned`（回看了几条），
+        调用方可以据此显示"已略过 N 条"，而不是假装它们不存在。
+
+    ★ 为什么不用「最近一条有 actual_value 的记录」代替：
+      实测 10-11 那两条 upload 的 actual_value 恰好等于 3.00（回填脚本把
+      pred×噪声 裁剪到 [3,8] 的截断产物），拿它当"最近化验"反而是全场最假的一个数。
+      真值口径本身没问题，问题在于**跨量比较**（真值均值 vs 预测最新），故此处只统一取预测值。
+    """
+    lo = settings.PB_GRADE_MIN if min_value is None else min_value
+    hi = settings.PB_GRADE_MAX if max_value is None else max_value
+
+    rows = (
+        db.query(
+            AnalysisRecord.id,
+            AnalysisRecord.group_id,
+            AnalysisRecord.image_path,
+            AnalysisRecord.prediction,
+            AnalysisRecord.actual_value,
+            AnalysisRecord.model_version,
+            AnalysisRecord.source,
+            AnalysisRecord.created_at,
+        )
+        .filter(AnalysisRecord.scene_id == scene_name)
+        .order_by(AnalysisRecord.created_at.desc(), AnalysisRecord.id.desc())
+        .limit(max_scan)
+        .all()
+    )
+
+    scanned = 0
+    skipped = 0   # 有值但落在口径外
+    missing = 0   # 该字段没值
+    hit = None
+
+    for r in rows:
+        scanned += 1
+        pred = r.prediction if isinstance(r.prediction, dict) else {}
+        raw = pred.get(field)
+        if raw is None and field == "pb_grade_xrf":
+            raw = pred.get("pb_grade")   # 兼容 1 条旧字段记录
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            missing += 1
+            continue
+        if lo <= v <= hi:
+            hit = r
+            break
+        skipped += 1
+
+    record = None
+    if hit is not None:
+        record = {
+            "id": hit.id,
+            "group_id": hit.group_id,
+            "image_path": hit.image_path,
+            "prediction": hit.prediction,
+            "actual_value": hit.actual_value,
+            "model_version": hit.model_version,
+            "source": hit.source,
+            "created_at": hit.created_at.isoformat() if hit.created_at else None,
+        }
+
+    return {
+        "scene": scene_name,
+        "field": field,
+        "caliber": {"min": lo, "max": hi},
+        "scanned": scanned,
+        "skipped": skipped,
+        "missing": missing,
+        "record": record,
+    }
+
+
 @router.get("/api/scenes/{scene_name}/stats")
 def scene_stats(scene_name: str, db: Session = Depends(get_db)):
     """场景统计：记录数 / 时间组 / 品位分布"""

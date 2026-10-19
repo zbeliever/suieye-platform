@@ -360,11 +360,22 @@ const REFRESH_INTERVAL = 5000 // 5 秒刷新一次
 //      实测两者差得很远（最新 1.79% vs 0-10月均值 5.23%），
 //      门面只看单点会被误读成"全厂品位 1.79%"，所以**主位显示均值、副位显示最新**。
 //   ③ 任一接口失败只让对应那一格显示「—」，不塞 0（0 是有效业务值，会误导）。
+//
+// ★★ 2026-10-19 老板拍板方案 A（本轮修的 P0）：
+//   原来"最新"直接取 records?limit=1，取到的是 2026-10-16 那条**真模型输出 1.79%**，
+//   而同一格均值来自 actual_value（XRF 真值 5.23%）——两个量并排 + 结论条红字
+//   「最新品位低于均值 66%」，第一屏就自相矛盾。
+//   现在改走 `/api/scenes/{scene}/latest`：由**后端**按 settings.PB_GRADE_MIN/MAX
+//   取口径内最近一条，并在响应里如实带回 skipped（跳过几条口径外）。
+//   口径外记录一条没删，时光机仍可查 —— 只是不再当门面的头条。
 // ══════════════════════════════════════════════════════════════════
 const plantKpi = ref({
   pbMean: null,        // Pb 平均品位 %（/api/scenes/flotation/stats → grade_distribution.mean）
-  pbLatest: null,      // Pb 最新一次分析 %（records?limit=1）
-  znLatest: null,      // Zn 最新一次分析 %
+  pbLatest: null,      // Pb 口径内最近一次分析 %（/latest）
+  znLatest: null,      // Zn 口径内最近一次分析 %
+  latestAt: null,      // 该条记录的 created_at（ISO）
+  latestSkipped: 0,    // 取数时跳过的口径外记录条数（0 = 最新一条本身就合规）
+  latestCaliber: null, // 后端返回的口径 {min,max}
   gradeCount: null,    // 参与统计的分析条数
   gradeFrom: '',       // 统计时间范围起点（YYYY-MM）
   gradeTo: '',
@@ -381,10 +392,10 @@ const kpiReady = ref(false)
 /** 拉门面指标。三个接口互不依赖，用 allSettled 并发 —— 任何一个挂了都不能拖垮门面。 */
 async function fetchPlantKpi() {
   const [gradeRes, waterRes] = await Promise.allSettled([
-    // ① 浮选品位：stats 拿均值与时间范围，records 拿最新一次
+    // ① 浮选品位：stats 拿均值与时间范围，latest 拿**口径内**最近一次
     Promise.all([
       api.get('/scenes/flotation/stats'),
-      api.get('/scenes/flotation/records', { params: { limit: 1 } }),
+      api.get('/scenes/flotation/latest'),
     ]),
     // ② 回用水质总览
     api.get('/water/overview'),
@@ -402,13 +413,16 @@ async function fetchPlantKpi() {
     next.gradeFrom = dr.from ? String(dr.from).slice(0, 7) : ''
     next.gradeTo = dr.to ? String(dr.to).slice(0, 7) : ''
 
-    // 最新一条：prediction 里两个字段都试，缺了宁可留空
-    const rec = recs?.records?.[0]
+    // 口径内最近一条：prediction 里两个字段都试，缺了宁可留空
+    const rec = recs?.record
     const pred = rec?.prediction || {}
     const pb = pred.pb_grade_xrf ?? pred.pb_grade
     const zn = pred.zn_grade_xrf ?? pred.zn_grade
     next.pbLatest = pb != null && isFinite(Number(pb)) ? Number(pb) : null
     next.znLatest = zn != null && isFinite(Number(zn)) ? Number(zn) : null
+    next.latestAt = rec?.created_at || null
+    next.latestSkipped = recs?.skipped || 0
+    next.latestCaliber = recs?.caliber || null
   }
 
   // ── ② 水质 ──
@@ -453,6 +467,23 @@ function applyRunRate() {
 /** 数字格式化（门面统一两位/一位，避免各格小数位不一致） */
 const fmt1 = (v) => (v == null || !isFinite(v) ? '—' : Number(v).toFixed(1))
 const fmt2 = (v) => (v == null || !isFinite(v) ? '—' : Number(v).toFixed(2))
+
+/** 「最新一次分析」那条记录的日期（MM-DD）。
+ *  ★ 必须写在门面上：口径过滤后这条可能不是"今天"，不写日期就等于默认它是"此刻"，
+ *    那才是真的误导。日期让"最新"这个词有了边界。 */
+const latestDay = computed(() => {
+  const s = plantKpi.value.latestAt
+  return s ? String(s).slice(5, 10) : ''
+})
+
+/** 该格的悬浮说明：把口径与被跳过的条数讲清楚（不藏在代码里）。 */
+const latestTip = computed(() => {
+  const c = plantKpi.value.latestCaliber
+  const range = c ? `${c.min}~${c.max}%` : '3~8%'
+  const sk = plantKpi.value.latestSkipped
+  return `口径 ${range} 内最近一次分析`
+    + (sk ? `；已跳过 ${sk} 条口径外记录（真模型输出，时光机可查）` : '')
+})
 
 /**
  * 全厂结论条 —— 门面的"一句话"。
@@ -4615,10 +4646,12 @@ function healthColor(h) {
           <span class="fk-foot" v-else>暂无记录</span>
         </div>
 
-        <div class="fh-kpi">
+        <div class="fh-kpi" :title="latestTip">
           <span class="fk-label">最新一次分析</span>
           <span class="fk-value">{{ fmt2(plantKpi.pbLatest) }}<em>%</em></span>
-          <span class="fk-foot">Pb · Zn {{ fmt2(plantKpi.znLatest) }}%</span>
+          <span class="fk-foot">
+            Pb · Zn {{ fmt2(plantKpi.znLatest) }}%<template v-if="latestDay"> · {{ latestDay }}</template>
+          </span>
         </div>
 
         <div class="fh-kpi">
