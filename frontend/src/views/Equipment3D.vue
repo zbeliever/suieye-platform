@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, shallowRef, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
@@ -34,6 +34,7 @@ import {
 
 // ── 页面状态 ────────────────────────────────────────
 const router = useRouter()
+const route = useRoute()
 const canvasContainer = ref(null)
 const selectedEquipment = ref(null)
 const trendChartRef = ref(null)
@@ -360,6 +361,8 @@ async function fetchEquipmentData() {
       if (isFirstLoad && scene) {
         // 首次拿到数据后，在场景中放置设备
         placeAllEquipments()
+        // 首屏带进来的 ?seg= 此刻才有落脚点，兑现它
+        nextTick(() => flushSegQuery())
       } else if (!isFirstLoad) {
         // 后续更新：只刷新数据，不重建模型
         updateEquipmentData()
@@ -3709,6 +3712,27 @@ function pickFacilityAt(clientX, clientY) {
 const hotFacilityId = ref(null)
 let hotFacilityTimer = null
 
+// ── 厂区导览浮层：收起状态存 localStorage ──────────
+/**
+ * ★ 为什么默认展开：这是唯一"能按车间找功能"的入口，收起会让新用户失去方向。
+ *   但演示时想露全厂区，一键收起后**刷新仍保持收起**——所以必须持久化。
+ * ★ key 带版本号：以后浮层布局大改时改 key，老状态自动失效，
+ *   避免用户升级后看到一个"自己从没关过、却是收起状态"的页面。
+ */
+const GUIDE_KEY = 'suieye.eq3d.guideCollapsed.v1'
+const guideCollapsed = ref(false)
+try { guideCollapsed.value = localStorage.getItem(GUIDE_KEY) === '1' } catch { /* 无痕模式 */ }
+
+function toggleGuide() {
+  guideCollapsed.value = !guideCollapsed.value
+  try { localStorage.setItem(GUIDE_KEY, guideCollapsed.value ? '1' : '0') } catch { /* 忽略 */ }
+  // 收起/展开会改变 3D 容器尺寸 —— renderer 必须跟着 setSize，
+  // 否则画布会按旧尺寸拉伸（视角比例错误）。等 DOM 更新后再量。
+  nextTick(() => { onResize() })
+  // 收起时若正展开着某段，一并收起，免得下次展开还停在抽屉状态
+  if (guideCollapsed.value) expandedSeg.value = null
+}
+
 /** 点建筑 = 相机飞过去 + 左栏对应条目高亮并滚入视野 */
 function selectFacility(facility) {
   if (!facility) return
@@ -3940,6 +3964,45 @@ function focusSegment(seg) {
   if (first) focusEquipment(first)
 }
 
+/**
+ * 响应全局侧栏的"在厂区中定位"请求（`/?seg=flotation`）。
+ *
+ * ★ 为什么用 query 而不是事件总线：
+ *   侧栏在 App.vue，3D 页是它的子路由 —— 两者唯一的共享通道就是 route。
+ *   用 query 还有一个好处：这个请求**可分享/可刷新**（URL 里看得出定位到了哪一段），
+ *   而事件总线是瞬时的，刷新就丢。
+ * ★ 只在首帧场景就绪后才飞（设备数据是异步来的，早了没有设备可看）。
+ */
+function applySegQuery() {
+  const segKey = route.query.seg
+  if (!segKey) return
+  const seg = PROCESS_SEGMENTS.find((s) => s.id === segKey)
+  if (!seg) return
+  expandedSeg.value = seg.id
+  focusSegment(seg)
+}
+
+/** 场景是否已初始化（watch query 时用它挡掉"首帧还没相机"的调用） */
+const sceneReady = ref(false)
+/** 首屏带进来的 seg 请求：等设备 mesh 建好后才能飞（否则没有落脚点） */
+let pendingSegQuery = null
+
+/** 设备放置完成后调用：把首屏的 ?seg= 请求兑现掉 */
+function flushSegQuery() {
+  if (!pendingSegQuery) return
+  const segKey = pendingSegQuery
+  pendingSegQuery = null
+  const seg = PROCESS_SEGMENTS.find((s) => s.id === segKey)
+  if (!seg) return
+  expandedSeg.value = seg.id
+  focusSegment(seg)
+}
+
+watch(
+  () => route.query.seg,
+  () => { if (sceneReady.value) applySegQuery() }
+)
+
 /** 直接进入某段的功能页（段位条上的"进入"快捷入口） */
 function enterSegmentDirect(seg) {
   router.push(seg.route)
@@ -4159,6 +4222,12 @@ onMounted(() => {
   }
   window.addEventListener('resize', onResize)
 
+  // 侧栏可能在进入本页时已带上 ?seg=（例如从别的页面点"浮选段"）
+  // ⚠️ 此时设备数据还在路上，focusSegment 会因为没有 mesh 而空转 ——
+  //    所以真正的飞行放在 fetchEquipmentData 之后（见 placeAllEquipments 末尾）。
+  sceneReady.value = true
+  pendingSegQuery = route.query.seg || null
+
   // 设备清单贴住操作日志上沿（日志高度随视口自适应，必须实测而非写死）
   nextTick(() => {
     syncDockBottom()
@@ -4362,23 +4431,46 @@ function healthColor(h) {
       </div>
     </div>
 
-    <!-- ══ 主内容区 ══ -->
+    <!-- ══ 主内容区 ══
+         ★★ 2026-10-19 重构（老板拍板方案 B）：
+            原来这里并排两条竖栏——全局侧栏(220px) + 厂区导览(240px)。
+            两者覆盖的是同一批功能页（9 项完全重合，同一页还有两种叫法），
+            而且两条竖栏吃掉 460px，1440 屏下 3D 视口只剩 928px，
+            边缘建筑（配电室）反复出框的直接原因就在这里。
+            现在厂区导览不再是"第二列菜单"，而是浮在 3D 视图上的**目录卡**：
+              · 全局侧栏 = 功能索引（"我要用告警，不关心它在哪栋楼"）
+              · 浮层目录 = 空间索引（"那栋楼是干嘛的 / 这段现在什么状况"）
+            视口宽度因此从 928 → 1112px，相机不必再为窄视口后撤。 -->
     <div class="main-layout">
-      <!-- 左侧内栏：厂区导览（工艺链 + 公辅载体）
-           ★ 设计意图：这一栏不是"功能清单"，而是**厂区的目录**。
-             上面一截是物料流经的工艺链（与 3D 里的管线一一对应），
-             下面一截是中控室/化验室/药剂间/配电室/监控立杆这些**建筑**，
-             每个功能都挂在它真实发生的那间屋子里。
-             这样无论从左侧点、还是从 3D 里点建筑，进的是同一个门。 -->
-      <div class="side-panel">
-        <div class="panel-header">
-          厂区导览
-          <span class="panel-sub">工艺链 · 功能落点</span>
+      <!-- 3D 视图（浮层目录叠在它左上角） -->
+      <div class="viewport" ref="canvasContainer">
+        <!-- 加载状态 -->
+        <div v-if="isLoading" class="loading-overlay">
+          <div class="loading-spinner"></div>
+          <span>正在加载设备数据...</span>
         </div>
-        <div class="side-scroll">
-          <!-- 一、工艺链：纵向物料流，段与段之间用时间轴连线贯穿 -->
-          <div class="side-group">
-            <div class="side-group-title">工艺流程</div>
+        <!-- 场景初始化失败：不能只是黑屏，必须说清是哪一步炸了 -->
+        <div v-else-if="sceneError" class="loading-overlay is-error">
+          <span>{{ sceneError }}</span>
+        </div>
+
+        <!-- ══ 厂区导览（浮层目录）════
+             ★ 它是"空间索引"而不是第二套功能菜单：
+               上半截是物料流经的工艺链（与 3D 里的管线一一对应），
+               下半截是中控室/化验室/药剂间/配电室/监控立杆这些**建筑**。
+               点工艺段 = 相机飞过去 + 高亮该段设备（不跳页）；
+               点载体里的 chip = 进该建筑里真实发生的那个功能页。
+             ★ 可收起：演示时一键变成纯厂区；状态存 localStorage。 -->
+        <div class="guide-card" :class="{ 'is-collapsed': guideCollapsed }" v-if="!isLoading">
+          <div class="guide-head" @click="toggleGuide">
+            <span class="gh-title">厂区导览</span>
+            <span class="gh-sub" v-if="!guideCollapsed">工艺链 · 功能落点</span>
+            <el-icon class="gh-carets"><ArrowRight v-if="guideCollapsed" /><ArrowDown v-else /></el-icon>
+          </div>
+
+          <div class="guide-body" v-show="!guideCollapsed">
+            <!-- 一、工艺链：纵向物料流，段与段之间用时间轴连线贯穿 -->
+            <div class="guide-sec">工艺流程</div>
             <div class="chain">
               <div
                 v-for="seg in navSegments"
@@ -4430,11 +4522,9 @@ function healthColor(h) {
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- 二、公辅与中控：功能在厂区里的物理载体 -->
-          <div class="side-group">
-            <div class="side-group-title">公辅与中控</div>
+            <!-- 二、公辅与中控：功能在厂区里的物理载体 -->
+            <div class="guide-sec">公辅与中控</div>
             <div
               v-for="f in NAV_FACILITIES"
               :key="f.id"
@@ -4457,19 +4547,6 @@ function healthColor(h) {
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- 中间 3D 视图 -->
-      <div class="viewport" ref="canvasContainer">
-        <!-- 加载状态 -->
-        <div v-if="isLoading" class="loading-overlay">
-          <div class="loading-spinner"></div>
-          <span>正在加载设备数据...</span>
-        </div>
-        <!-- 场景初始化失败：不能只是黑屏，必须说清是哪一步炸了 -->
-        <div v-else-if="sceneError" class="loading-overlay is-error">
-          <span>{{ sceneError }}</span>
         </div>
 
         <!-- 数字孪生 HUD：色标解释 + 工况 + 数据同步时刻（3D 视图内部的数据锚定） -->
@@ -5038,12 +5115,24 @@ const typeNames = {
   box-shadow: var(--shadow-sm);
   margin-bottom: 12px;
 }
-.toolbar-left { display: flex; align-items: center; gap: 16px; }
+.toolbar-left { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .page-title {
   margin: 0; font-size: 18px; font-weight: 700; color: #1a1a2e;
   display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;          /* 标题永不被压缩 */
+  white-space: nowrap;
 }
-.stat-chips { display: flex; gap: 6px; align-items: center; }
+/* ★ 徽标必须 flex-shrink:0：
+   左栏是 flex 容器，右侧工具栏先占位后，徽标会被压到 min-content ——
+   el-tag 内部是 flex 盒子，压到极限后中文会**逐字换行**，再被圆角裁掉，
+   画面上就成了「▮▮▮▮ 3 停 1」这种残片（1440 下实测）。 */
+.stat-chips {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.stat-chips :deep(.el-tag) { white-space: nowrap; }
 .refresh-hint {
   font-size: 11px;
   color: #aaa;
@@ -5058,63 +5147,80 @@ const typeNames = {
   min-height: 0;
 }
 
-/* ── 左侧内栏：功能导航 ── */
-.side-panel {
-  width: 240px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: var(--shadow-sm);
+/* ── 厂区导览：浮在 3D 视图左上角的目录卡 ──
+   ★ 它替代了原来并排的第二条竖栏：
+     竖栏是"布局的一部分"（挤压视口），浮层是"画面的一部分"（盖在视口上）。
+     同样 208px 宽，竖栏让视口从 1112 掉到 872；浮层只遮住厂区西北角那块空地。 */
+.guide-card {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 208px;
+  max-height: calc(100% - 28px);
   display: flex;
   flex-direction: column;
-  /* ★ 必须裁切 + 圆角落在外层：否则 .side-scroll 的内容会越过圆角描边。
-     （滚动由 .side-scroll 负责，外层裁的是它的容器轮廓，不影响滚动） */
+  /* 浅色卡片 + 轻微透明：既压得住深色 3D 底，又不会像一块白板贴在画面上 */
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(10, 16, 26, 0.22);
+  z-index: 10;
   overflow: hidden;
-  flex-shrink: 0;
 }
-.panel-header {
+.guide-card.is-collapsed { width: auto; }
+.guide-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 10px 9px 12px;
+  cursor: pointer;
+  user-select: none;
   flex-shrink: 0;
-  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-1);
+}
+.guide-card.is-collapsed .guide-head { border-bottom: 0; }
+.guide-head:hover { background: rgba(22, 93, 255, 0.05); }
+.gh-title {
   font-size: 13px;
   font-weight: 600;
-  color: #607d8b;
-  border-bottom: 1px solid #eee;
-  background: #ffffff;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  color: var(--text-1);
+  flex-shrink: 0;
 }
-/* 副标题：说明这一栏到底是什么（是"厂区目录"，不是功能清单） */
-.panel-sub {
-  font-size: 10px;
-  font-weight: 400;
-  color: #a9b2bd;
-  letter-spacing: 0.2px;
-}
-.side-scroll {
+.gh-sub {
   flex: 1;
-  overflow-y: auto;
-  /* ★ 768 高度下内容比容器高约 4px —— 恰好触发一条滚动条，
-     而这条滚动条除了"看起来有东西没显示完"没有任何信息量。
-     收紧 padding 把这 4px 吃掉，1366x768 下不再出滚动条。 */
-  padding: 8px 8px 10px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gh-carets {
+  font-size: 12px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.guide-body {
+  flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  padding: 8px 8px 10px;
   scrollbar-width: thin;
 }
-/* 仅在真的需要时才露出滚动条（内容真的超了），避免细微误差带来的视觉噪音 */
-.side-scroll::-webkit-scrollbar { width: 6px; }
-.side-scroll::-webkit-scrollbar-thumb {
-  background: #d6dbe3; border-radius: 3px;
-}
-.side-scroll::-webkit-scrollbar-track { background: transparent; }
-.side-group { margin-bottom: 12px; }
-.side-group:last-child { margin-bottom: 0; }
-.side-group-title {
+.guide-body::-webkit-scrollbar { width: 5px; }
+.guide-body::-webkit-scrollbar-thumb { background: #d6dbe3; border-radius: 3px; }
+.guide-body::-webkit-scrollbar-track { background: transparent; }
+/* 段标题：比正文字号小一档，靠字重和留白区分层级（不用色块，避免与状态色抢眼） */
+.guide-sec {
   font-size: 11px;
   color: #99a3ae;
   font-weight: 600;
   letter-spacing: 0.6px;
-  padding: 0 6px 6px;
+  padding: 6px 6px 5px;
 }
+.guide-sec:first-child { padding-top: 2px; }
 
 /* ══════ 工艺链（纵向时间轴）══════
    设计意图：4 个工艺段不是 4 个并列的按钮，而是**同一条物料流上的 4 个站点**。
@@ -5300,12 +5406,13 @@ const typeNames = {
 }
 
 /* ══════ 矮屏紧凑化 ══════
-   左栏是"4 段 + 5 处载体"的固定结构，内容高度基本恒定；
-   768 高度下可用区只有 ~627px，实测溢出 42px → 会多出一条滚动条。
+   导览卡是"4 段 + 5 处载体"的固定结构，内容高度基本恒定；
+   768 高度下卡片可用区有限，会把内容顶到滚动。
    这里按**视口高度**收（不是宽度）：1920x1080 完全不受影响，
-   1366x768 这种矮屏才触发，把 42px 从各处内距里省回来。 */
+   1366x768 这种矮屏才触发，把内距省回来。 */
 @media (max-height: 820px) {
-  .side-group { margin-bottom: 10px; }
+  .guide-body { padding: 6px 7px 8px; }
+  .guide-sec { padding: 4px 5px 4px; }
   .chain-row { padding-top: 4px; }
   .chain-meta { padding-bottom: 6px; }
   .chain-drawer { padding: 6px 8px 7px; margin-bottom: 6px; }
@@ -5413,7 +5520,10 @@ const typeNames = {
 .twin-hud {
   position: absolute;
   top: 14px;
-  left: 14px;
+  /* ★ 2026-10-19 从左上角移到右上角：
+     左上角现在是「厂区导览」浮层（208px 宽），HUD 也在那边会直接重叠。
+     让给导览卡是合理的 —— 导览是"去哪"，HUD 是"现在怎么样"，后者更适合贴边。 */
+  right: 14px;
   min-width: 252px;
   background: rgba(20, 24, 31, 0.74);
   backdrop-filter: blur(10px);

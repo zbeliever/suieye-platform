@@ -1,5 +1,11 @@
 <template>
   <div class="water-page" v-loading="loading">
+    <!-- ====== 页头（功能名 = navMap 短名，供导航与页面标题对齐） ====== -->
+    <header class="water-head">
+      <h1>水质监测</h1>
+      <span class="water-sub">回水可回用性 · 5 点位在线监测</span>
+    </header>
+
     <!-- ====== KPI 统计带 ====== -->
     <section class="kpi-strip">
       <div class="kpi-cell">
@@ -561,6 +567,25 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+/* 页头：只占一行，与 Dashboard 的 h1 同字号，不额外抢 KPI 带的注意力 */
+.water-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.water-head h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--text-1);
+  line-height: 1.2;
+}
+.water-sub {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  padding-left: 12px;
+  border-left: 1px solid var(--border-1);
 }
 
 /* ====== KPI 统计带 ====== */

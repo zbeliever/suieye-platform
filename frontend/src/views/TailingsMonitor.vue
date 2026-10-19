@@ -4,7 +4,10 @@
     <section class="equip-strip">
       <div class="eq-main">
         <div class="eq-title">
+          <!-- ★ 标题 = 「设备名 · 功能名」组合式，与 Workbench 的「浮选 · 分析工作台」同构：
+               设备名是这页的主体（浓密机），功能名让导航与页面标题对得上号 -->
           <span class="eq-name">{{ eq.name || '尾矿浓密机' }}</span>
+          <span class="eq-page-tag">尾矿处理</span>
           <span class="cond-badge" :class="condition.level">{{ condition.label || '—' }}</span>
         </div>
         <div class="eq-meta">
@@ -959,6 +962,14 @@ onUnmounted(() => {
   font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
   color: var(--text-1);
+}
+/* 功能名（= navMap 短名）：弱化处理，与设备名形成"主体 · 归属"的层次 */
+.eq-page-tag {
+  font-size: 12px;
+  color: var(--text-3);
+  padding-left: 10px;
+  border-left: 1px solid var(--border-1);
+  line-height: 1.1;
 }
 .cond-badge {
   font-size: 11px;

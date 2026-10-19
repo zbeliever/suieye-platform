@@ -141,7 +141,7 @@ onMounted(loadAll)
     <!-- 页头 -->
     <div class="header">
       <div>
-        <h2>安全巡检中心</h2>
+        <h2>安全巡检</h2>
         <p class="subtitle">皮带全线监控 · 隐患闭环管理 · {{ stats.total_count || 0 }} 条历史巡检记录</p>
       </div>
       <el-button type="primary" @click="goSpotCheck">

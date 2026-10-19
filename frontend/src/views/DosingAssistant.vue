@@ -5,7 +5,7 @@
       <div class="header-left">
         <el-icon :size="28" color="#165dff"><MagicStick /></el-icon>
         <div>
-          <h1>智能配药助手</h1>
+          <h1>配药助手</h1>
           <p class="sub">基于选矿专家规则的药剂配方推荐系统</p>
         </div>
       </div>

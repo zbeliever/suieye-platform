@@ -359,7 +359,7 @@ onUnmounted(() => {
     <!-- 顶栏 -->
     <header class="rp-header">
       <div class="header-left">
-        <h2>报表中心</h2>
+        <h2>报表</h2>
         <span class="sub">浮选过程数据分析与趋势追踪</span>
       </div>
       <div class="header-right">

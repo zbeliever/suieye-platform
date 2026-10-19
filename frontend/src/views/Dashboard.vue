@@ -350,7 +350,7 @@ onUnmounted(() => {
     <!-- 页头（去 emoji，克制） -->
     <div class="page-header">
       <div>
-        <h1>运营仪表盘</h1>
+        <h1>仪表盘</h1>
         <p class="page-sub">铅锌矿浮选过程智能视觉分析 · {{ new Date().toLocaleDateString('zh-CN') }}</p>
       </div>
       <div class="header-actions">

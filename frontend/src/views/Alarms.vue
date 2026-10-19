@@ -425,7 +425,7 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
     <!-- ===== 顶部：标题 + 聚合说明 ===== -->
     <div class="page-head">
       <div class="head-left">
-        <h1>告警中心</h1>
+        <h1>告警</h1>
         <span class="head-sub">
           {{ stats.total }} 条告警聚合为 <b>{{ stats.events || 0 }}</b> 个事件
           <template v-if="stats.redundancy?.redundant">

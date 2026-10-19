@@ -413,9 +413,9 @@ onMounted(() => {
     <!-- ====== 头部 ====== -->
     <div class="tm-header">
       <div class="tm-title-row">
-        <div class="tm-title-icon">⏳</div>
+        
         <div>
-          <h2>工况时光机</h2>
+          <h2>时光机</h2>
           <p class="tm-subtitle">{{ isGrinding ? '回溯粒度分析记录，对比相似工况，洞察磨矿产品细度变化规律' : '回溯历史分析记录，对比相似工况，洞察品位波动规律' }}</p>
         </div>
       </div>
