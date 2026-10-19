@@ -479,8 +479,8 @@ onUnmounted(() => {
       <div class="brand">
         <BrandMark class="brand-mark" />
         <div class="brand-text">
-          <h1>淬眸 SuiEye</h1>
-          <span class="brand-sub">选矿全流程智能视觉分析平台</span>
+          <h1>SuiEye 淬眸</h1>
+          <span class="brand-sub">铅锌浮选全流程智能视觉分析平台</span>
         </div>
       </div>
       <div class="topbar-right">
@@ -723,7 +723,7 @@ onUnmounted(() => {
 
     <!-- ============ 底栏 ============ -->
     <footer class="lw-footer">
-      <span>SuiEye Platform v0.1 · 铅锌矿浮选过程智能视觉分析</span>
+      <span>SuiEye 淬眸 v0.1 · 铅锌浮选全流程智能视觉分析平台</span>
       <span class="footer-divider">|</span>
       <span>数据来源：真实生产台账 · 覆盖 {{ trendStat.days || '—' }} 个有效日</span>
       <span class="footer-divider">|</span>

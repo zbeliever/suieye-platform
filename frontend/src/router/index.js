@@ -8,7 +8,7 @@ const routes = [
     path: '/',
     name: 'home3d',
     component: () => import('../views/Equipment3D.vue'),
-    meta: { title: '淬眸 SuiEye · 铅锌浮选数字孪生' },
+    meta: { title: 'SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台' },
   },
   {
     path: '/livewall',
@@ -97,7 +97,14 @@ const router = createRouter({
 })
 
 router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title} · 淬眸 SuiEye` : '淬眸 SuiEye'
+  // ★ 首页（门面）的 meta.title 已经是系统正式全称，不能再拼品牌后缀，
+  //   否则会变成「SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台 · 淬眸 SuiEye」——
+  //   同一个品牌名一屏出现两次。其他页才拼。
+  if (to.path === '/') {
+    document.title = to.meta.title || 'SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台'
+    return
+  }
+  document.title = to.meta.title ? `${to.meta.title} · SuiEye 淬眸` : 'SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台'
 })
 
 export default router

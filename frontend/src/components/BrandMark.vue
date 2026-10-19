@@ -8,7 +8,7 @@
     fill="none"
     xmlns="http://www.w3.org/2000/svg"
     role="img"
-    aria-label="淬眸 SuiEye"
+    aria-label="SuiEye 淬眸"
   >
     <path
       d="M16 3.5 L26.83 9.75 L26.83 22.25 L16 28.5 L5.17 22.25 L5.17 9.75 Z"

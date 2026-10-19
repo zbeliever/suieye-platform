@@ -4579,7 +4579,7 @@ function healthColor(h) {
            再挂上报修工单、标签/自转/静音/复位四个调试开关。
            那是**运维台**的开场白，不是门面的开场白。
            门面要一句话说清"这座厂此刻怎么样"，所以：
-             · 左边 = 品牌 + 一句话定位（淬眸 SuiEye · 铅锌浮选数字孪生）
+             · 左边 = 品牌 + 一句话定位（SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台）
              · 中间 = 四个工艺/全厂指标（品位均值 / 最新分析品位 / 回用水质 / 在役率）
              · 右边 = 只留"进入监控"这一个去处的入口，调试开关全部移除
          ★ 设备健康度没有丢：它仍在右侧「数字孪生同步」HUD 里按工况分档显示。
@@ -4588,8 +4588,13 @@ function healthColor(h) {
       <div class="fh-brand">
         <span class="fh-mark" aria-hidden="true"></span>
         <div class="fh-names">
-          <h1 class="fh-title">淬眸 SuiEye</h1>
-          <p class="fh-sub">铅锌浮选数字孪生 · 全流程在线监测</p>
+          <!-- ★ 品牌名两段式：西文在前、中文在后，与老板定的全称一致
+               「SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台」。
+               主标题只放品牌（SuiEye + 淬眸），副标题放**完整定位**——
+               门面是全站第一屏，这里必须出现一次系统的正式全称，
+               否则访客看完不知道这套东西到底管什么。 -->
+          <h1 class="fh-title"><span class="fh-en">SuiEye</span> 淬眸</h1>
+          <p class="fh-sub">铅锌浮选全流程智能视觉分析平台</p>
         </div>
       </div>
 
@@ -5356,6 +5361,12 @@ const typeNames = {
   color: #1a1a2e;
   letter-spacing: 0.2px;
   white-space: nowrap;
+}
+/* 西文品牌名：字号略大 + 收紧字距，让它承担"这是谁"的第一眼识别 */
+.fh-en {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
 }
 .fh-sub {
   margin: 0;

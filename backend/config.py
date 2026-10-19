@@ -1,4 +1,4 @@
-"""淬眸 SuiEye 平台配置"""
+"""SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台 —— 配置"""
 
 from pydantic_settings import BaseSettings
 from functools import lru_cache
@@ -6,7 +6,9 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # 应用
-    APP_NAME: str = "SuiEye Platform"
+    # ★ 这里是 FastAPI 的 title，会显示在 /docs 与 /openapi.json 上，
+    #   所以用**系统正式全称**，不要写成产品代号。
+    APP_NAME: str = "SuiEye 淬眸 · 铅锌浮选全流程智能视觉分析平台"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
 
