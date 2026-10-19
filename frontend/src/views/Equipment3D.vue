@@ -4768,7 +4768,10 @@ function healthColor(h) {
           <button class="dock-toggle" @click="equipDockOpen = !equipDockOpen">
             <el-icon><component :is="equipDockOpen ? 'ArrowDown' : 'ArrowUp'" /></el-icon>
             <span>设备清单</span>
-            <em>{{ equipments.length }}</em>
+            <!-- ★ 这里原来还有个 {{ equipments.length }} 徽标（=10），
+                 而顶部状态条已写着「正常 6/10」—— 同一屏同一个数字出现两遍，
+                 正是老板明确禁止的"同一数字反复出现"。清单本身就是全量列表，
+                 条数不提供任何新信息，直接去掉。 -->
           </button>
           <div v-show="equipDockOpen" class="dock-list">
             <div
