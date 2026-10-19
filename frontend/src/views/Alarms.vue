@@ -87,6 +87,7 @@ const imgError = ref(false)
 const rootCause = ref(null)           // 根因联动分析结果
 const rcError = ref(false)
 const expandedRc = ref('')            // 展开的候选原因 code
+const featExpanded = ref(false)       // 泡沫特征：默认只给 4 项（支撑证据，不跟根因争主次）
 
 // 处置表单
 const handleForm = ref({ action: '', operator: '', note: '', action_taken: '' })
@@ -148,6 +149,20 @@ const page = computed(() => Math.floor(filters.value.offset / filters.value.limi
 const curStatus = computed(() => detail.value?.alarm?.status || 'new')
 const availableActions = computed(() => ACTIONS_BY_STATUS[curStatus.value] || [])
 const noteRequired = computed(() => ['start', 'close', 'false_positive'].includes(handleForm.value.action))
+const evidenceSrc = computed(() => {
+  const ev = detail.value?.evidence
+  if (!ev) return ''
+  return imgUrl(imgMode.value === 'overlay' ? ev.overlay : ev.image)
+})
+// 泡沫特征只占 4 行：它是根因的旁证，不该比根因还长
+const shownFeatures = computed(() => {
+  const items = detail.value?.evidence?.features?.items || []
+  return featExpanded.value ? items.slice(0, 8) : items.slice(0, 4)
+})
+// 「超窗降权」已经在来源格里写了一次，缺口里不再重复同一句
+const missingNotes = computed(() =>
+  (rootCause.value?.missing || []).filter((m) => !m.includes('超出建议窗口'))
+)
 
 // ---- 批量选择派生值 ----
 const checkedGroups = computed(() => groups.value.filter((g) => checkedKeys.value.includes(g.group_key)))
@@ -261,6 +276,9 @@ async function loadRootCause(id) {
   expandedRc.value = ''
   try {
     rootCause.value = await api.get(`/alarms/${id}/root-cause`)
+    // ★ 头号候选默认展开：机理 + 建议措施是这个模块的全部价值，
+    //   藏在一次点击后面，等于"特色功能"在默认视野里不存在。
+    expandedRc.value = rootCause.value?.candidates?.[0]?.code || ''
   } catch (e) {
     console.error('根因分析失败:', e)
     rcError.value = true
@@ -280,9 +298,17 @@ function lagText(min) {
 }
 
 function srcMeta(s) {
-  if (!s.available) return { cls: 'off', text: '无数据' }
-  if (s.in_window) return { cls: 'on', text: lagText(s.lag_minutes) }
-  return { cls: 'far', text: lagText(s.lag_minutes) }
+  if (!s.available) {
+    return { cls: 'off', text: '无数据', tag: '未接入', tip: '告警前窗口内没有该工段的记录，无法比对' }
+  }
+  if (s.in_window) return { cls: 'on', text: lagText(s.lag_minutes), tag: '窗口内', tip: '' }
+  const hours = (s.lag_minutes / 60).toFixed(1)
+  return {
+    cls: 'far',
+    text: lagText(s.lag_minutes),
+    tag: '超窗·降权',
+    tip: `最近样本距告警 ${hours} 小时，超出建议窗口，已按时间衰减降权`,
+  }
 }
 
 function handleSearch() { filters.value.offset = 0; loadGroups() }
@@ -652,91 +678,93 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
           </div>
 
           <div class="panel-body">
-            <!-- 证据图 -->
-            <div class="evidence-img">
-              <div class="img-tabs">
-                <button :class="{ on: imgMode === 'image' }" @click="imgMode = 'image'">原始抓拍</button>
-                <button :class="{ on: imgMode === 'overlay' }" @click="imgMode = 'overlay'">
-                  {{ detail.evidence.overlay_kind === 'det' ? '检测标注' : '分割叠加' }}
-                </button>
-              </div>
-              <div class="img-box">
-                <img
-                  v-if="!imgError && (imgMode === 'image' ? detail.evidence.image : detail.evidence.overlay)"
-                  :src="imgUrl(imgMode === 'image' ? detail.evidence.image : detail.evidence.overlay)"
-                  @error="imgError = true" alt="告警证据图"
+            <!-- ① 触发快照：证据图 / 实测值 / 时间 / 记录压成一条（原「规则命中」四行整块并入） -->
+            <div class="snap">
+              <div class="snap-thumb" v-if="detail.evidence.image">
+                <el-image
+                  v-if="!imgError && evidenceSrc"
+                  :src="evidenceSrc"
+                  :preview-src-list="[evidenceSrc]"
+                  preview-teleported
+                  fit="cover"
+                  class="snap-img"
+                  @error="imgError = true"
                 />
                 <div v-else class="img-missing">
                   <el-icon><Picture /></el-icon>
                   <span>图像不可用</span>
                 </div>
+                <div class="img-tabs" v-if="detail.evidence.overlay">
+                  <button :class="{ on: imgMode === 'image' }" @click="imgMode = 'image'">原始</button>
+                  <button :class="{ on: imgMode === 'overlay' }" @click="imgMode = 'overlay'">
+                    {{ detail.evidence.overlay_kind === 'det' ? '标注' : '叠加' }}
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <!-- 规则命中 -->
-            <div class="block">
-              <div class="block-title">规则命中</div>
-              <div class="rule-hit">
-                <div class="rh-row">
-                  <span class="rh-label">告警内容</span>
-                  <span class="rh-value strong">{{ detail.alarm.message }}</span>
+              <div class="snap-body">
+                <div class="snap-top">
+                  <span class="snap-msg" :title="detail.alarm.message">{{ detail.alarm.message }}</span>
                 </div>
-                <div class="rh-row" v-if="detail.rule_hit.value !== null && detail.rule_hit.value !== undefined">
-                  <span class="rh-label">{{ detail.rule_hit.field_label || '实测值' }}</span>
-                  <span class="rh-value">
-                    <b :class="{ danger: detail.alarm.level === 'danger' }">{{ detail.rule_hit.value }}</b>
-                    <span class="rh-op">{{ detail.rule_hit.condition_label }} 阈值 {{ detail.rule_hit.threshold }}</span>
-                    <span class="rh-dev" v-if="detail.rule_hit.deviation !== null">
-                      （偏离 {{ detail.rule_hit.deviation > 0 ? '+' : '' }}{{ detail.rule_hit.deviation }}）
-                    </span>
+                <div class="snap-vals" v-if="detail.rule_hit.value !== null && detail.rule_hit.value !== undefined">
+                  <b :class="{ danger: detail.alarm.level === 'danger' }">{{ detail.rule_hit.value }}</b>
+                  <span class="sv-op">{{ detail.rule_hit.condition_label }}阈值 {{ detail.rule_hit.threshold }}</span>
+                  <span class="sv-dev" v-if="detail.rule_hit.deviation !== null && detail.rule_hit.deviation !== undefined">
+                    偏离 {{ detail.rule_hit.deviation > 0 ? '+' : '' }}{{ detail.rule_hit.deviation }}
                   </span>
                 </div>
-                <div class="rh-row">
-                  <span class="rh-label">触发时间</span>
-                  <span class="rh-value">{{ fmtTime(detail.alarm.created_at) }}</span>
-                </div>
-                <div class="rh-row" v-if="detail.record">
-                  <span class="rh-label">分析记录</span>
-                  <span class="rh-value">
-                    #{{ detail.record.id }} · 模型 {{ detail.record.model_version }}
-                  </span>
+                <div class="snap-meta">
+                  <span>{{ fmtTime(detail.alarm.created_at) }}</span>
+                  <template v-if="detail.record">
+                    <span class="dot">·</span>
+                    <span class="snap-mono">#{{ detail.record.id }}</span>
+                    <span class="dot">·</span>
+                    <span>{{ detail.record.model_version }}</span>
+                  </template>
                 </div>
               </div>
             </div>
 
-            <!-- 根因联动分析（P1）：把品位告警放回「磨矿 → 浮选 → 回水」链上 -->
-            <div class="block rc-block" v-if="rootCause && rootCause.supported">
-              <div class="block-title">
-                根因联动分析
-                <span class="block-note" v-if="rootCause.candidates.length">
-                  {{ rootCause.candidates.length }} 项候选 · 按可能性排序
+            <!-- ② 根因联动分析（SuiEye 特色）：把一条品位告警放回「磨矿 → 浮选 → 回水」工艺链 -->
+            <section class="rc-hero" v-if="rootCause && rootCause.supported">
+              <div class="rc-hd">
+                <span class="rc-name">根因联动分析</span>
+                <span class="rc-sub">磨矿 · 配药 · 回水</span>
+                <span class="rc-count" v-if="rootCause.candidates.length">
+                  {{ rootCause.candidates.length }} 项候选{{ rootCause.candidates.length > 1 ? ' · 按可能性排序' : '' }}
                 </span>
-                <span class="block-note" v-else>未发现显著异常</span>
+                <span class="rc-count" v-else>未发现显著异常</span>
               </div>
 
-              <!-- 溯源链路：三个工段最近一条样本的时间距离 -->
-              <div class="rc-sources">
-                <span class="rc-src" v-for="(s, i) in rootCause.sources" :key="s.key">
-                  <i class="rc-join" v-if="i">→</i>
-                  <i class="rc-dot" :class="srcMeta(s).cls"></i>
+              <!-- 三个工段的最新样本与时间距离：并列证据，不画箭头假装因果先后 -->
+              <div class="rc-srcs">
+                <div
+                  class="rc-src" v-for="s in rootCause.sources" :key="s.key"
+                  :class="srcMeta(s).cls" :title="srcMeta(s).tip"
+                >
+                  <i class="rc-dot"></i>
                   <span class="rc-src-name">{{ s.label }}</span>
-                  <em class="rc-src-lag">{{ srcMeta(s).text }}</em>
-                </span>
+                  <span class="rc-src-state">{{ srcMeta(s).tag }}</span>
+                  <span class="rc-src-lag">{{ srcMeta(s).text }}</span>
+                </div>
               </div>
 
-              <!-- 候选原因 -->
-              <div class="rc-item" v-for="c in rootCause.candidates" :key="c.code"
-                   :class="{ open: expandedRc === c.code }" @click="toggleRc(c.code)">
+              <!-- 候选：第 1 名直接给机理与建议（这是本模块的价值，不该藏在一次点击后面） -->
+              <div
+                class="rc-item" v-for="c in rootCause.candidates" :key="c.code"
+                :class="{ open: expandedRc === c.code, top: c.rank === 1 }"
+                @click="toggleRc(c.code)"
+              >
                 <div class="rc-line1">
                   <span class="rc-rank">{{ c.rank }}</span>
                   <span class="rc-title">{{ c.title }}</span>
                   <span class="rc-cat" :class="c.category">{{ CAT_LABELS[c.category] || c.category }}</span>
-                  <span class="rc-conf" :class="'lv-' + (CONF_CLS[c.confidence_label] || 'low')">{{ c.confidence_label }}</span>
-                </div>
-                <div class="rc-bar">
-                  <i :style="{ width: Math.round(c.confidence * 100) + '%' }"></i>
+                  <span class="rc-bar"><i :style="{ width: Math.round(c.confidence * 100) + '%' }"></i></span>
                   <span class="rc-bar-num">{{ c.confidence.toFixed(2) }}</span>
+                  <span class="rc-conf" :class="'lv-' + (CONF_CLS[c.confidence_label] || 'low')"
+                        :title="`置信度 ${c.confidence_label}`"><i>置信</i>{{ c.confidence_label }}</span>
+                  <el-icon class="rc-caret" :class="{ open: expandedRc === c.code }"><ArrowRight /></el-icon>
                 </div>
+
                 <div class="rc-ev">
                   <span class="rc-ev-item" v-for="(e, ei) in c.evidence" :key="ei">
                     <i class="rc-st" v-if="e.station">{{ e.station }}</i>
@@ -765,7 +793,7 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
                     <span class="rc-k">采样时间</span>
                     <span class="rc-v">
                       <template v-for="(e, ei) in c.evidence" :key="ei">
-                        <template v-if="ei"> · </template>{{ e.sample_at ? fmtTime(e.sample_at) : '—' }}（距 {{ Math.round(e.lag_minutes) }} 分钟）
+                        <template v-if="ei"> · </template>{{ e.sample_at ? fmtTime(e.sample_at) : '—' }}（距 {{ Math.round(e.lag_minutes || 0) }} 分钟）
                       </template>
                     </span>
                   </div>
@@ -778,42 +806,55 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
               <!-- 无结论 -->
               <div class="rc-empty" v-if="!rootCause.candidates.length">{{ rootCause.conclusion }}</div>
 
-              <!-- 数据缺口：如实说明为什么没归因出来 -->
-              <div class="rc-missing" v-if="rootCause.missing.length">
-                <div class="rc-missing-item" v-for="(m, mi) in rootCause.missing" :key="mi">
+              <!-- 数据缺口：只写「没有数据」；「超窗降权」已在上面来源格里，不重复 -->
+              <div class="rc-note" v-if="missingNotes.length">
+                <div class="rc-missing-item" v-for="(m, mi) in missingNotes" :key="mi">
                   <i class="rc-warn">!</i><span>{{ m }}</span>
                 </div>
               </div>
 
-              <div class="rc-caveat">本分析基于统计关联，不作为因果结论</div>
+              <div class="rc-caveat">统计关联，非因果结论 · 依据告警前同期数据，请结合现场核查</div>
+            </section>
+
+            <!-- 非浮选场景：说明为什么没有这块，而不是静默消失 -->
+            <div class="rc-unsupported" v-else-if="rootCause && !rootCause.supported">
+              跨工段根因归因当前只覆盖浮选品位告警
             </div>
 
-            <!-- 同帧其他规则 -->
-            <div class="block" v-if="detail.siblings.length">
-              <div class="block-title">同一帧的其他告警 <span class="block-note">{{ detail.siblings.length }} 条</span></div>
-              <div class="sib" v-for="s in detail.siblings" :key="s.id" @click="selectAlarm(s.id)">
-                <span class="ev-level" :class="s.level">{{ s.level_label }}</span>
-                <span class="sib-rule">{{ s.rule_name }}</span>
-                <span class="sib-status" :style="{ color: statusMeta(s.status).color }">{{ s.status_label }}</span>
-                <el-icon class="sib-go"><ArrowRight /></el-icon>
+            <!-- 同帧其他规则：一行 chips，不再各占一行 -->
+            <div class="sib-block" v-if="detail.siblings.length">
+              <div class="block-title">
+                同帧其他告警 <span class="block-note">{{ detail.siblings.length }} 条</span>
+              </div>
+              <div class="sib-row">
+                <button
+                  class="sib" v-for="s in detail.siblings" :key="s.id"
+                  @click="selectAlarm(s.id)" :title="`${s.rule_name} · ${s.status_label}`"
+                >
+                  <span class="ev-level" :class="s.level">{{ s.level_label }}</span>
+                  <span class="sib-rule">{{ s.rule_name }}</span>
+                  <span class="sib-status" :style="{ color: statusMeta(s.status).color }">{{ s.status_label }}</span>
+                </button>
               </div>
             </div>
 
-            <!-- 浮选：特征与历史基线对比 -->
-            <div class="block" v-if="detail.evidence.kind === 'foam' && detail.evidence.features.items.length">
-              <div class="block-title">
-                泡沫特征与历史基线对比
+            <!-- 浮选：泡沫表观偏离（默认 4 行 —— 旁证，不与根因争主次） -->
+            <div class="feat-block" v-if="detail.evidence.kind === 'foam' && detail.evidence.features.items.length">
+              <div class="block-title" title="以基线均值为中心，偏移量 = 偏离的标准差倍数（|z| ≥ 1.5 显著）">
+                泡沫表观偏离
                 <span class="block-note">
-                  TOP {{ Math.min(8, detail.evidence.features.items.length) }} 偏离
+                  {{ shownFeatures.length }} / {{ detail.evidence.features.items.length }} 项
+                  · 显著 {{ detail.evidence.features.significant }}
                   <template v-if="detail.evidence.features.baseline_n">
                     · 基线 n={{ detail.evidence.features.baseline_n }}
                   </template>
                 </span>
+                <button
+                  class="link-btn" v-if="detail.evidence.features.items.length > 4"
+                  @click="featExpanded = !featExpanded"
+                >{{ featExpanded ? '收起' : '全部' }}</button>
               </div>
-              <div class="feat-note">
-                以基线均值为中心，偏移量 = 偏离的标准差倍数（|z| ≥ 1.5 显著）
-              </div>
-              <div class="feat" v-for="f in detail.evidence.features.items.slice(0, 8)" :key="f.key">
+              <div class="feat" v-for="f in shownFeatures" :key="f.key">
                 <span class="feat-name">{{ f.label }}</span>
                 <span class="feat-val">
                   {{ f.value }}
@@ -828,12 +869,8 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
                   <em v-if="f.percentile !== undefined">· {{ f.percentile }}%</em>
                 </span>
               </div>
-              <div class="feat-summary">
-                显著偏离 <b>{{ detail.evidence.features.significant }}</b> / {{ detail.evidence.features.items.length }} 项
-                <template v-if="detail.evidence.features.excluded_bad">
-                  <span class="dot">·</span>
-                  基线已排除 {{ detail.evidence.features.excluded_bad }} 条口径异常的历史记录
-                </template>
+              <div class="feat-summary" v-if="detail.evidence.features.excluded_bad">
+                基线已排除 {{ detail.evidence.features.excluded_bad }} 条口径异常的历史记录
               </div>
             </div>
 
@@ -1106,22 +1143,55 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
 .dh-rule { font-size: 15px; font-weight: var(--weight-semibold); color: var(--text-1); }
 .dh-status { font-size: var(--text-sm); font-weight: var(--weight-medium); }
 
-.evidence-img { margin-bottom: var(--space-3); }
-.img-tabs { display: flex; gap: 6px; margin-bottom: 6px; }
+/* ---- 触发快照（图 + 实测 + 时间压成一条）---- */
+.snap {
+  display: flex; gap: var(--space-3);
+  padding: 10px; margin-bottom: var(--space-3);
+  background: var(--bg-3); border-radius: var(--radius);
+}
+.snap-thumb {
+  position: relative;
+  flex: 0 0 112px; width: 112px; height: 84px;
+  border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-video);
+}
+.snap-img { width: 100%; height: 100%; display: block; cursor: zoom-in; }
+.snap-img :deep(img) { object-fit: cover; }
+.snap-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.snap-top { display: flex; align-items: flex-start; gap: 8px; }
+.snap-msg {
+  flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); font-weight: var(--weight-medium);
+  color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.snap-vals { display: flex; align-items: baseline; gap: 8px; font-size: var(--text-xs); color: var(--text-3); }
+.snap-vals b {
+  font-size: 20px; line-height: 1; font-weight: var(--weight-semibold);
+  color: var(--text-1); font-variant-numeric: tabular-nums;
+}
+.snap-vals b.danger { color: var(--color-danger); }
+.sv-op { color: var(--text-3); }
+.sv-dev { color: var(--color-danger); }
+.snap-meta { display: flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--text-3); }
+.snap-mono { font-variant-numeric: tabular-nums; }
+
+/* 原始/叠加切换压在缩略图底部：控件贴着它控制的东西，不横跨整条 */
+.img-tabs {
+  position: absolute; left: 4px; right: 4px; bottom: 4px;
+  display: flex; gap: 3px; justify-content: center;
+}
 .img-tabs button {
-  font-size: var(--text-xs); padding: 3px 10px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border-1); background: var(--bg-1); color: var(--text-2);
+  flex: 0 1 auto; font-size: 10px; padding: 0 6px; line-height: 15px;
+  border-radius: 3px; border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.92); color: var(--text-2);
   cursor: pointer; transition: all var(--transition); font-family: inherit;
 }
-.img-tabs button:hover { border-color: var(--text-4); }
-.img-tabs button.on { background: var(--color-primary-bg); border-color: var(--color-primary); color: var(--color-primary); }
-.img-box {
-  height: 190px; background: var(--bg-3); border-radius: var(--radius);
-  display: flex; align-items: center; justify-content: center; overflow: hidden;
+.img-tabs button:hover { background: #fff; }
+.img-tabs button.on { background: var(--color-primary); color: var(--text-inverse); }
+.img-missing {
+  width: 100%; height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 4px;
+  color: var(--text-3); font-size: 11px;
 }
-.img-box img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
-.img-missing { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--text-xs); }
-.img-missing .el-icon { font-size: 22px; color: var(--text-4); }
+.img-missing .el-icon { font-size: 20px; color: var(--text-4); }
 
 .block { margin-bottom: var(--space-4); }
 .block:last-child { margin-bottom: 0; }
@@ -1130,44 +1200,42 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
   margin-bottom: var(--space-2); display: flex; align-items: baseline; gap: 8px;
 }
 .block-note { font-size: var(--text-xs); color: var(--text-3); font-weight: var(--weight-normal); }
-
-/* 规则命中 */
-.rule-hit { background: var(--bg-3); border-radius: var(--radius); padding: 10px 12px; }
-.rh-row { display: flex; gap: 10px; font-size: var(--text-sm); padding: 2px 0; }
-.rh-label { flex: 0 0 66px; color: var(--text-3); }
-.rh-value { color: var(--text-1); flex: 1 1 auto; }
-.rh-value.strong { font-weight: var(--weight-medium); }
-.rh-value b { font-size: 15px; }
-.rh-value b.danger { color: var(--color-danger); }
-.rh-op { color: var(--text-3); margin-left: 6px; }
-.rh-dev { color: var(--color-danger); }
-
-/* 同帧兄弟 */
-.sib {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px; border-radius: var(--radius); background: var(--bg-3);
-  margin-bottom: 4px; cursor: pointer; font-size: var(--text-sm);
-  transition: background var(--transition);
+/* 行内文字按钮（全部 / 收起），不抢主按钮的视觉 */
+.link-btn {
+  margin-left: auto; padding: 0; border: 0; background: none;
+  color: var(--color-primary); font-size: var(--text-xs);
+  font-family: inherit; cursor: pointer;
 }
-.sib:hover { background: #eaecef; }
-.sib-rule { color: var(--text-1); flex: 1 1 auto; }
-.sib-status { font-size: var(--text-xs); }
-.sib-go { color: var(--text-4); font-size: 12px; }
+.link-btn:hover { color: var(--color-primary-hover); }
 
-/* 特征对比 */
-.feat-note { font-size: var(--text-xs); color: var(--text-3); margin-bottom: 6px; }
-.feat { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); height: 22px; }
-.feat-name { flex: 0 0 84px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.feat-val { flex: 0 0 150px; color: var(--text-1); font-variant-numeric: tabular-nums; }
+/* 同帧兄弟：一行 chips */
+.sib-block { margin-bottom: var(--space-4); }
+.sib-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.sib {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: var(--radius); background: var(--bg-3);
+  border: 1px solid var(--border-1);
+  cursor: pointer; font-size: var(--text-xs); font-family: inherit;
+  transition: border-color var(--transition);
+}
+.sib:hover { border-color: var(--color-primary); }
+.sib-rule { color: var(--text-1); }
+.sib-status { font-size: var(--text-xs); }
+
+/* 泡沫表观：4 行旁证，条形压窄、去掉说明段 */
+.feat-block { border-top: 1px solid var(--border-2); padding-top: 10px; margin-bottom: var(--space-4); }
+.feat { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); height: 20px; }
+.feat-name { flex: 0 0 80px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feat-val { flex: 0 0 146px; color: var(--text-1); font-variant-numeric: tabular-nums; }
 .feat-val em { color: var(--text-3); font-style: normal; }
-.feat-bar { position: relative; flex: 1 1 auto; height: 8px; background: var(--bg-3); border-radius: 4px; overflow: hidden; }
+.feat-bar { position: relative; flex: 1 1 auto; height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
 .bar-axis { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--text-4); }
-.bar-fill { position: absolute; top: 1px; bottom: 1px; border-radius: 3px; }
-.feat-z { flex: 0 0 74px; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.bar-fill { position: absolute; top: 1px; bottom: 1px; border-radius: 2px; }
+.feat-z { flex: 0 0 66px; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .feat-z em { color: var(--text-3); font-style: normal; }
 .feat-z.high { color: var(--color-danger); font-weight: var(--weight-medium); }
 .feat-z.medium { color: var(--color-warning); }
-.feat-summary { font-size: var(--text-xs); color: var(--text-3); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-2); }
+.feat-summary { font-size: 11px; color: var(--text-4); margin-top: 5px; }
 
 /* 风险快照 */
 .risk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--border-1); border-radius: var(--radius); overflow: hidden; }
@@ -1231,36 +1299,86 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
 .batch-dlg .bd-label:first-child { margin-top: 0; }
 .batch-row { display: flex; align-items: center; gap: 10px; }
 .batch-hint { font-size: var(--text-xs); color: var(--text-3); }
-/* ---- 根因联动分析 ---- */
-.rc-block { border-top: 1px solid var(--border-2); padding-top: 12px; }
-.rc-sources {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-  background: var(--bg-3); border-radius: var(--radius); padding: 6px 10px;
-  margin-bottom: 8px; font-size: var(--text-xs);
+/* ============================================================
+   根因联动分析 —— 本页唯一的主角
+   ★ 视觉上只给它三样特权：主色左边线、浅蓝底、白卡抬升；
+     其余区块回到中性灰的"旁证"语汇。层级靠结构，不靠加颜色。
+   ============================================================ */
+.rc-hero {
+  margin-bottom: var(--space-4);
+  padding: 12px 14px;
+  border: 1px solid #dbe7ff;
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  background: #f8fbff;
 }
-.rc-src { display: inline-flex; align-items: center; gap: 4px; }
-.rc-join { color: var(--text-4); font-style: normal; margin: 0 2px; }
-.rc-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; background: var(--text-4); }
+.rc-hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.rc-name {
+  font-size: 15px; font-weight: var(--weight-semibold);
+  color: var(--text-1); letter-spacing: .2px;
+}
+.rc-sub {
+  flex: 0 0 auto; font-size: 11px; line-height: 16px; padding: 0 6px;
+  color: var(--color-primary); background: var(--bg-1);
+  border: 1px solid #c7d8ff; border-radius: var(--radius-sm);
+}
+.rc-count { margin-left: auto; font-size: var(--text-xs); color: var(--text-3); }
+
+/* 三源并列：各自最近样本 + 时间距离。
+   ★ 不画「磨矿→配药→回水」箭头：三个工段是并列证据，不是因果先后，
+     画成链会让观众以为是推理顺序 —— 这是数据诚实问题，不是样式问题。
+   ★ 做成一整条带子（格间 1px 分隔）而不是三张浮卡：三张卡在 880px 宽里
+     内容只占四成，看着像没填满；一条带子读起来才是"一组证据"。 */
+.rc-srcs {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 10px; overflow: hidden;
+  background: var(--bg-1); border: 1px solid var(--border-1); border-radius: var(--radius);
+}
+.rc-src {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 5px;
+  min-width: 0; padding: 5px 9px;
+  border-left: 1px solid var(--border-2);
+  font-size: 11px; color: var(--text-2);
+}
+.rc-src:first-child { border-left: 0; }
+.rc-dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--text-4); }
 .rc-dot.on { background: var(--color-success); }
 .rc-dot.far { background: var(--color-warning); }
-.rc-dot.off { background: var(--text-4); }
-.rc-src-name { color: var(--text-2); }
-.rc-src-lag { color: var(--text-3); font-style: normal; }
-
-.rc-item {
-  border: 1px solid var(--border-1); border-radius: var(--radius);
-  padding: 8px 10px; margin-bottom: 6px; cursor: pointer;
-  transition: border-color .18s, background .18s;
+.rc-src-name { white-space: nowrap; }
+.rc-src-state { margin-left: auto; font-size: 10px; color: var(--text-3); white-space: nowrap; }
+.rc-src.on .rc-src-state { color: var(--color-success); }
+.rc-src.far .rc-src-state { color: var(--color-warning-deep); }
+.rc-src-lag {
+  flex: 0 0 100%; padding-left: 11px;
+  font-size: var(--text-xs); color: var(--text-1); font-variant-numeric: tabular-nums;
 }
-.rc-item:hover { border-color: var(--text-4); }
-.rc-item.open { border-color: var(--color-primary); background: var(--color-primary-bg); }
-.rc-line1 { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.rc-src.far .rc-src-lag { color: var(--text-2); }
+
+/* 候选：#1 是白卡（结论），其余是列表行（备选） */
+.rc-item { border-radius: var(--radius); cursor: pointer; transition: background var(--transition), border-color var(--transition); }
+.rc-item.top {
+  background: var(--bg-1); border: 1px solid var(--border-1);
+  box-shadow: var(--shadow-sm); padding: 9px 10px; margin-bottom: 6px;
+}
+.rc-item.top.open { border-color: #c7d8ff; }
+.rc-item:not(.top) { padding: 7px 10px 5px; border-bottom: 1px solid var(--border-2); }
+.rc-item:not(.top):hover { background: #f3f7ff; }
+.rc-item:not(.top).open { background: var(--bg-1); }
+
+.rc-line1 { display: flex; align-items: center; gap: 6px; }
 .rc-rank {
   flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%;
-  background: var(--text-1); color: var(--bg-1); font-size: 10px;
+  background: var(--color-primary); color: var(--text-inverse); font-size: 10px;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.rc-title { flex: 1 1 auto; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-1); }
+.rc-item:not(.top) .rc-rank {
+  background: var(--bg-1); color: var(--text-3); border: 1px solid var(--border-1);
+}
+.rc-title {
+  flex: 1 1 auto; min-width: 0;
+  font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--text-1);
+}
+.rc-item.top .rc-title { font-size: var(--text-base); font-weight: var(--weight-semibold); }
 .rc-cat {
   flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: var(--radius-sm);
   background: var(--bg-1); color: var(--text-3); border: 1px solid var(--border-1);
@@ -1269,34 +1387,61 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
 .rc-cat.flotation { color: var(--color-primary); border-color: #c7d8ff; background: var(--color-primary-bg); }
 .rc-cat.water { color: #0e9bd6; border-color: #c2e8f7; background: #eaf8fe; }
 .rc-conf { flex: 0 0 auto; font-size: 11px; font-weight: var(--weight-medium); }
+.rc-conf i { font-style: normal; font-size: 10px; font-weight: var(--weight-normal); color: var(--text-4); margin-right: 2px; }
 .rc-conf.lv-high { color: var(--color-danger); }
-.rc-conf.lv-mid { color: var(--color-warning); }
+.rc-conf.lv-mid { color: var(--color-warning-deep); }
 .rc-conf.lv-low { color: var(--text-3); }
 
-.rc-bar { position: relative; height: 6px; background: var(--bg-3); border-radius: 3px; margin-bottom: 8px; }
-.rc-bar i { display: block; height: 100%; border-radius: 3px; background: var(--color-primary); transition: width .3s; }
-.rc-bar-num { position: absolute; right: 0; top: -13px; font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.rc-bar {
+  flex: 0 0 48px; height: 4px; background: var(--bg-3);
+  border-radius: 2px; overflow: hidden;
+}
+.rc-bar i { display: block; height: 100%; border-radius: 2px; background: var(--color-primary); transition: width .3s; }
+.rc-bar-num {
+  flex: 0 0 26px; text-align: right;
+  font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.rc-caret { flex: 0 0 auto; font-size: 12px; color: var(--text-4); transition: transform var(--transition); }
+.rc-caret.open { transform: rotate(90deg); color: var(--color-primary); }
 
-.rc-ev { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: var(--text-xs); color: var(--text-2); }
+.rc-ev {
+  display: flex; flex-wrap: wrap; gap: 2px 12px;
+  margin-top: 5px; padding-left: 22px;
+  font-size: var(--text-xs); color: var(--text-2);
+}
 .rc-ev-item b { color: var(--text-1); font-weight: var(--weight-medium); }
 .rc-ev-item .rc-dev { color: var(--color-danger); font-style: normal; margin-left: 3px; }
 .rc-ev-item .rc-base { color: var(--text-4); margin-left: 3px; }
 .rc-st { color: #0e9bd6; font-style: normal; font-weight: var(--weight-medium); margin-right: 3px; }
 
-.rc-detail { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-1); display: flex; flex-direction: column; gap: 5px; }
+.rc-detail {
+  margin: 8px 0 0 22px; padding-top: 8px;
+  border-top: 1px dashed var(--border-1);
+  display: flex; flex-direction: column; gap: 5px;
+}
 .rc-kv { display: flex; gap: 8px; font-size: var(--text-xs); }
 .rc-k { flex: 0 0 52px; color: var(--text-3); }
 .rc-v { flex: 1 1 auto; color: var(--text-2); line-height: 1.65; }
 .rc-v.act { color: var(--color-primary); }
 .rc-formula { font-size: 10px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 
-.rc-empty { font-size: var(--text-xs); color: var(--text-3); background: var(--bg-3); border-radius: var(--radius); padding: 8px 10px; line-height: 1.6; }
-.rc-missing { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
-.rc-missing-item { display: flex; align-items: flex-start; gap: 5px; font-size: var(--text-xs); color: var(--text-3); line-height: 1.5; }
+.rc-empty {
+  font-size: var(--text-xs); color: var(--text-3); line-height: 1.6;
+  background: var(--bg-1); border: 1px solid var(--border-1);
+  border-radius: var(--radius); padding: 8px 10px;
+}
+.rc-note { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.rc-missing-item { display: flex; align-items: flex-start; gap: 5px; font-size: 11px; color: var(--text-3); line-height: 1.5; }
 .rc-warn {
   flex: 0 0 auto; width: 13px; height: 13px; border-radius: 50%; margin-top: 1px;
   background: var(--color-warning); color: var(--bg-1); font-size: 9px; font-style: normal;
   display: inline-flex; align-items: center; justify-content: center; font-weight: bold;
 }
-.rc-caveat { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border-2); font-size: 10px; color: var(--text-4); }
+.rc-caveat { margin-top: 8px; font-size: 11px; color: var(--text-3); }
+.rc-unsupported {
+  margin-bottom: var(--space-4);
+  padding: 6px 10px;
+  background: var(--bg-3); border-radius: var(--radius);
+  font-size: var(--text-xs); color: var(--text-3);
+}
 </style>
