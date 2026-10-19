@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const router = useRouter()
 
@@ -348,6 +349,7 @@ onUnmounted(() => {
 <template>
   <div class="dashboard">
     <!-- 页头（去 emoji，克制） -->
+    <BackToFactory class="page-back" />
     <div class="page-header">
       <div>
         <h1>仪表盘</h1>
@@ -552,6 +554,9 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: var(--space-3);
 }
+/* 返回入口独占页头上方一行：演示时"从厂区进来 → 一键回去"的动线最直观，
+   不要和 h1 挤在一行（h1 是 22px，旁边挂个 26px 按钮视觉重心会歪） */
+.page-back { margin-bottom: var(--space-3); }
 .header-actions { display: flex; align-items: center; gap: 10px; }
 .auto-hint { font-size: var(--text-xs); color: var(--text-3); }
 .page-header h1 {

@@ -15,6 +15,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const loading = ref(true)
 const sys = ref(null)
@@ -139,6 +140,7 @@ onMounted(loadAll)
 
 <template>
   <div class="page">
+    <BackToFactory class="page-back" />
     <div class="page-head">
       <h2>设置</h2>
       <span class="page-sub">配置均来自真实数据源：场景包 YAML + 模型台账，改动即生效</span>

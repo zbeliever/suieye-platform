@@ -76,6 +76,27 @@ export function titleOf(path) {
 }
 
 /**
+ * 工作台族路由的**入口名** —— 给"同时列多个工作台入口"的地方用（如厂区导览的化验室）。
+ *
+ * ★ 为什么不直接用 titleOf：`/workbench/safety` 和 `/workbench/flotation` 都返回
+ *   「分析工作台」，同一张卡里并排出现两条同名入口，观众会以为是重复项
+ *   （2026-10-19 实测：化验室里「分析工作台」印了两遍）。
+ *   这里按场景补一个限定词：浮选 → 浮选分析，安全 → 安全分析。
+ *   ⚠️ 这只是**入口消歧**，不是新造一个全站页面名 —— 页面标题仍旧叫「分析工作台」。
+ */
+const WORKBENCH_SCENE_LABEL = {
+  flotation: '浮选分析',
+  grinding: '磨矿分析',
+  safety: '安全分析',
+}
+
+export function workbenchEntryName(path) {
+  const m = /^\/workbench\/([\w-]+)/.exec(path || '')
+  if (!m) return titleOf(path)
+  return WORKBENCH_SCENE_LABEL[m[1]] || NAV_ITEMS.workbench.name
+}
+
+/**
  * 工艺段子项（挂在「智能工厂」下）。
  *
  * ★ 为什么不复用 Equipment3D.vue 里的 PROCESS_SEGMENTS：

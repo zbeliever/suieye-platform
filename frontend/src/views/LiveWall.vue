@@ -5,6 +5,7 @@ import * as echarts from 'echarts'
 import api from '../api'
 import BrandMark from '../components/BrandMark.vue'
 import FrothLive from '../components/FrothLive.vue'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const router = useRouter()
 
@@ -483,6 +484,8 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="topbar-right">
+        <!-- 返回厂区：极简模式（无边框面包屑样式），不抢指挥条的视觉 -->
+        <BackToFactory compact />
         <span class="sys-status" :class="{ err: backendOk === false }">
           <i class="sys-dot"></i>{{ backendOk === false ? '后端未连接' : '系统运行正常' }}
         </span>

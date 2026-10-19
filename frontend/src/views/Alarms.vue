@@ -10,6 +10,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 // ---- 字典 ----
 const POSITIONS = ['浮选班长', '磨矿班长', '值班调度', '安全员', '工艺工程师', '设备点检员']
@@ -423,6 +424,7 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
 <template>
   <div class="page">
     <!-- ===== 顶部：标题 + 聚合说明 ===== -->
+    <BackToFactory class="page-back" />
     <div class="page-head">
       <div class="head-left">
         <h1>告警</h1>

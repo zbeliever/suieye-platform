@@ -1,5 +1,6 @@
 <template>
   <div class="water-page" v-loading="loading">
+    <BackToFactory class="page-back" />
     <!-- ====== 页头（功能名 = navMap 短名，供导航与页面标题对齐） ====== -->
     <header class="water-head">
       <h1>水质监测</h1>
@@ -266,6 +267,7 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import api from '../api'
 import { useWebSocket } from '../api/ws'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const CARD_METRICS = ['ss', 'turbidity', 'cod', 'cu']
 

@@ -12,6 +12,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
 import api from '../api/index.js'
+// 功能名唯一真源：目录卡里的入口文案一律取自这里，禁止手写
+// —— 同一页在两处叫不同名字（报表 / 报表统计）会让观众以为是两个功能
+import { workbenchEntryName } from '../utils/navMap'
 // 工业细节构件库：法兰/护栏/爬梯/平台/铭牌/警示条/电机/齿轮 —— 每簇合批成 1 个 draw call
 import {
   MAT as DETAIL_MAT, P, addGeos, cluster,
@@ -199,8 +202,16 @@ function toggleSegment(seg) {
  *    左侧按这个结构排列，就与 3D 场景里的建筑一一对应 —— 左侧是"厂区导览"，
  *    不再是"功能清单"。后续阶段会在 3D 里把这些建筑实体建出来，点建筑进同一页。
  *
- *  每项 entries 是该建筑里能进的平台功能；单入口的载体只放一个。 */
-const NAV_FACILITIES = [
+ *  每项 entries 是该建筑里能进的平台功能；单入口的载体只放一个。
+ *
+ *  ★★ 2026-10-19 二次拍板（老板："这个3D页作为首页和主页，做成其他功能页的入口"）：
+ *     · 全局左侧导航栏已删除 → 本页成为全站唯一的"进入层"
+ *     · 目录卡保留，它承担**整页介绍 + 另一条进入路径**（单击功能名即可，不必记着双击建筑）
+ *     · 因此"建筑里也点得到 / 卡里也列着"不算重复 —— 是"空间入口"与"功能入口"两条路
+ *     ⚠️ 但**文案必须唯一**：同一页在卡里叫"报表"、在别处叫"报表统计"，观众会以为是两个功能。
+ *        所以 label 一律从 navMap 取，禁止在这里手写字面量。
+ */
+const FACILITY_ENTRIES = [
   {
     id: 'control_room',
     name: '中控室',
@@ -208,10 +219,10 @@ const NAV_FACILITIES = [
     icon: 'Monitor',
     desc: '全厂监视与调度中心',
     entries: [
-      { path: '/dashboard',    label: '生产总览' },
-      { path: '/alarms',       label: '告警中心' },
-      { path: '/reports',      label: '报表统计' },
-      { path: '/timemachine',  label: '工况时光机' },
+      { path: '/dashboard' },
+      { path: '/alarms' },
+      { path: '/reports' },
+      { path: '/timemachine' },
     ],
   },
   {
@@ -222,8 +233,8 @@ const NAV_FACILITIES = [
     desc: '取样化验与工艺调整',
     entries: [
       // 磨矿工作台已有独立的工艺段落点（磨矿段 → 粒度分析），这里不重复列
-      { path: '/workbench/flotation', label: '浮选工作台' },
-      { path: '/workbench/safety',    label: '安全工作台' },
+      { path: '/workbench/flotation' },
+      { path: '/workbench/safety' },
     ],
   },
   {
@@ -232,7 +243,7 @@ const NAV_FACILITIES = [
     tag: '浮选厂房 · 北侧',
     icon: 'FirstAidKit',
     desc: '药剂制备与添加',
-    entries: [{ path: '/dosing', label: '配药助手' }],
+    entries: [{ path: '/dosing' }],
   },
   {
     id: 'power_room',
@@ -240,7 +251,7 @@ const NAV_FACILITIES = [
     tag: '公辅区 · 东侧',
     icon: 'Cpu',
     desc: '供配电与机柜',
-    entries: [{ path: '/settings', label: '系统设置' }],
+    entries: [{ path: '/settings' }],
   },
   {
     id: 'cctv',
@@ -248,9 +259,17 @@ const NAV_FACILITIES = [
     tag: '厂区沿线 · 4 路',
     icon: 'VideoCamera',
     desc: '全流程摄像点位',
-    entries: [{ path: '/livewall', label: '直播墙' }],
+    entries: [{ path: '/livewall' }],
   },
 ]
+
+/** 补上 label：统一取 navMap 的名称
+ *  普通路由用 titleOf；工作台族（/workbench/:scene）用 workbenchEntryName，
+ *  否则化验室里「浮选工作台 / 安全工作台」会印成两条一模一样的「分析工作台」。 */
+const NAV_FACILITIES = FACILITY_ENTRIES.map((f) => ({
+  ...f,
+  entries: f.entries.map((en) => ({ ...en, label: workbenchEntryName(en.path) || en.path })),
+}))
 
 // ── 弹窗状态 ────────────────────────────────────────
 const showTrendDialog = ref(false)

@@ -1,6 +1,7 @@
 <template>
   <div class="tailings-page" v-loading="loading">
     <!-- ====== 设备头 ====== -->
+    <BackToFactory class="page-back" />
     <section class="equip-strip">
       <div class="eq-main">
         <div class="eq-title">
@@ -453,6 +454,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const loading = ref(true)
 

@@ -1,6 +1,7 @@
 <template>
   <div class="dosing">
     <!-- 顶栏 -->
+    <BackToFactory class="page-back" />
     <header class="ds-header">
       <div class="header-left">
         <el-icon :size="28" color="#165dff"><MagicStick /></el-icon>
@@ -311,6 +312,7 @@ import { useRoute } from 'vue-router'
 import { MagicStick, EditPen, Cpu } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const route = useRoute()
 const loading = ref(false)

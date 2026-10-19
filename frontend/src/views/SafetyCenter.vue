@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const router = useRouter()
 
@@ -138,6 +139,7 @@ onMounted(loadAll)
 
 <template>
   <div class="page" v-loading="loading">
+    <BackToFactory class="page-back" />
     <!-- 页头 -->
     <div class="header">
       <div>

@@ -10,6 +10,7 @@ import {
 } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -411,6 +412,7 @@ onMounted(() => {
 <template>
   <div class="tm-page">
     <!-- ====== 头部 ====== -->
+    <BackToFactory class="page-back" />
     <div class="tm-header">
       <div class="tm-title-row">
         

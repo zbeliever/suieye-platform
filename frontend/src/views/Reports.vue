@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 // ---- 数据 ----
 const loading = ref(true)
@@ -357,6 +358,7 @@ onUnmounted(() => {
 <template>
   <div class="reports-page">
     <!-- 顶栏 -->
+    <BackToFactory class="page-back" />
     <header class="rp-header">
       <div class="header-left">
         <h2>报表</h2>

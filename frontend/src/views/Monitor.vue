@@ -22,6 +22,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { VideoPlay, VideoPause } from '@element-plus/icons-vue'
 import api from '../api'
+import BackToFactory from '../components/BackToFactory.vue'
 
 const DATA_DATE = '2019-08-22'
 const C_LINE = '#165dff'
@@ -672,6 +673,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="monitor">
     <!-- 顶栏 -->
+    <BackToFactory class="page-back" />
     <div class="mn-top">
       <div class="mn-top-left">
         <div class="mn-title">

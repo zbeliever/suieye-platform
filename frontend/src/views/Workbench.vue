@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, VideoPlay } from '@element-plus/icons-vue'
 import FrothLive from '../components/FrothLive.vue'
+import BackToFactory from '../components/BackToFactory.vue'
 import api from '../api'
 
 const route = useRoute()
@@ -334,26 +335,25 @@ onMounted(async () => {
 
 <template>
   <div class="page">
-    <el-page-header @back="$router.push('/')">
-      <template #content>
-        <span class="page-title">{{ sceneInfo?.display_name || cfg.name }} · 分析工作台</span>
-      </template>
-      <template #extra>
-        <el-tag v-if="sceneInfo?.active_model" type="success" effect="dark" size="small">
-          模型 {{ sceneInfo.active_model }}
-        </el-tag>
-        <el-tag v-else type="info" size="small">无在线模型</el-tag>
-        <!-- 工况标签（粒度场景） -->
-        <el-tag
-          v-if="result?.prediction?.condition && sceneId === 'grinding'"
-          :type="result.prediction.condition === '正常' ? 'success' : result.prediction.condition === '过磨' ? 'warning' : 'danger'"
-          size="small"
-          style="margin-left: 6px"
-        >
-          {{ result.prediction.condition }}
-        </el-tag>
-      </template>
-    </el-page-header>
+    <!-- ★ 统一返回入口：原来这里用 el-page-header 自带的回退箭头，
+         与其它 10 个页面的「← 智能工厂」长得不一样。全站只保留一种返回样式。 -->
+    <BackToFactory class="page-back" />
+    <div class="wb-head">
+      <span class="page-title">{{ sceneInfo?.display_name || cfg.name }} · 分析工作台</span>
+      <el-tag v-if="sceneInfo?.active_model" type="success" effect="dark" size="small">
+        模型 {{ sceneInfo.active_model }}
+      </el-tag>
+      <el-tag v-else type="info" size="small">无在线模型</el-tag>
+      <!-- 工况标签（粒度场景） -->
+      <el-tag
+        v-if="result?.prediction?.condition && sceneId === 'grinding'"
+        :type="result.prediction.condition === '正常' ? 'success' : result.prediction.condition === '过磨' ? 'warning' : 'danger'"
+        size="small"
+        style="margin-left: 6px"
+      >
+        {{ result.prediction.condition }}
+      </el-tag>
+    </div>
 
     <div class="workbench">
       <!-- 左列：实时画面 + 上传 -->
@@ -574,6 +574,14 @@ onMounted(async () => {
 .page-title {
   font-size: 16px;
   font-weight: 500;
+}
+/* 页头：返回按钮独占一行，场景名 + 模型标签并排在下面一行（原 el-page-header 版式） */
+.page-back { margin-bottom: 12px; }
+.wb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .workbench {
   display: grid;
