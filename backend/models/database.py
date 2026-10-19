@@ -480,6 +480,10 @@ class WebhookSubscription(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     url = Column(String(500), nullable=False)
+    # 接收方类型：generic / feishu / wecom / dingtalk
+    # ★ 决定 body 结构与签名位置，不是装饰字段。群机器人只认自己那套格式，
+    #   填错 = 第一条告警就被 400 拒收（见 services/chat_adapters.py）
+    provider = Column(String(20), default="generic")
     events = Column(String(200), default="alarm.created")   # 逗号分隔的事件名
     secret = Column(String(100), default="")                # HMAC-SHA256 签名密钥
     description = Column(String(200), default="")
@@ -529,6 +533,10 @@ def _ensure_columns():
         "alarm_records": [
             ("source", "VARCHAR(20) DEFAULT 'internal'"),
             ("origin", "VARCHAR(50) DEFAULT 'SuiEye'"),
+        ],
+        "webhook_subscriptions": [
+            # 老订阅默认 generic，保持原行为不变；飞书/企微/钉钉是新增能力
+            ("provider", "VARCHAR(20) DEFAULT 'generic'"),
         ],
     }
     with engine.begin() as conn:

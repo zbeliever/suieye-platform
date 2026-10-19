@@ -8,11 +8,21 @@
  *   3. 处置闭环：待处理 → 已确认 → 处理中 → 已闭环 / 误报，写审计流水
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 import { useWebSocket } from '../api/ws'
 import PageShell from '../components/PageShell.vue'
 import StatCard from '../components/StatCard.vue'
+
+const router = useRouter()
+
+/** 去设置页接飞书机器人（带 focus 参数，对方会滚到面板并聚焦地址框）。
+ *  ★ 为什么放在告警页：告警"能不能推到群里"是这一页的诉求，
+ *    入口藏在「设置 → 页面最底部」等于没有 —— 用户不会去找。 */
+function goFeishu() {
+  router.push({ path: '/settings', query: { focus: 'feishu' } })
+}
 
 // ---- 字典 ----
 const POSITIONS = ['浮选班长', '磨矿班长', '值班调度', '安全员', '工艺工程师', '设备点检员']
@@ -476,6 +486,9 @@ onBeforeUnmount(() => { if (autoTimer) clearInterval(autoTimer) })
         </template>
         <template v-else-if="lastUpdate">最后更新 {{ lastUpdate }}</template>
       </span>
+      <el-button size="small" @click="goFeishu">
+        <el-icon><Promotion /></el-icon>&nbsp;接入飞书
+      </el-button>
       <el-button size="small" :loading="loading" @click="loadGroups(true)">
         <el-icon><Refresh /></el-icon>&nbsp;刷新
       </el-button>

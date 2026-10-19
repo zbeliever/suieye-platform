@@ -40,6 +40,7 @@ from backend.models.database import (
     WebhookSubscription,
     get_db,
 )
+from backend.services import chat_adapters
 
 router = APIRouter()
 
@@ -74,9 +75,12 @@ def _valid_events(events: list[str]) -> list[str]:
 
 def _to_out(s: WebhookSubscription) -> dict:
     """对外序列化 —— **绝不返回 secret**，只告诉前端"配没配"。"""
+    p = s.provider or "generic"
     return {
         "id": s.id,
         "url": s.url,
+        "provider": p,
+        "provider_label": chat_adapters.PROVIDERS.get(p, {}).get("label", "通用 JSON"),
         "events": _split_events(s.events),
         "description": s.description or "",
         "enabled": bool(s.enabled),
@@ -90,6 +94,16 @@ def _to_out(s: WebhookSubscription) -> dict:
     }
 
 
+def _valid_provider(p: str | None) -> str:
+    v = (p or "generic").strip().lower()
+    if v not in chat_adapters.PROVIDERS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"未知接收方类型 {v}；可选：{list(chat_adapters.PROVIDERS)}",
+        )
+    return v
+
+
 def _sign(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
@@ -97,43 +111,62 @@ def _sign(secret: str, body: bytes) -> str:
 # ============================================================
 # 投递
 # ============================================================
-async def _deliver(sub: dict, event: str, data: dict, payload: dict | None = None) -> dict:
-    """向单个订阅投递一条事件，返回投递结果（不抛异常）。"""
-    payload = payload or {"event": event, "ts": _now(), "data": data}
-    body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+async def _deliver(sub: dict, event: str, data: dict) -> dict:
+    """向单个订阅投递一条事件，返回投递结果（不抛异常）。
 
+    ★ provider 决定 body 结构与签名位置（见 services/chat_adapters.py）；
+      群机器人还要再解析业务码 —— HTTP 200 不等于送达。
+    """
+    provider = (sub.get("provider") or "generic").lower()
+    req = chat_adapters.build(
+        provider, event, data, secret=sub.get("secret") or "", url=sub["url"]
+    )
+    if req["kind"] == "skip":
+        # 群机器人只该收到告警类事件（快照之类不往群里刷），静默跳过、不记失败
+        return {"ok": True, "status": None, "error": None, "elapsed_ms": 0, "skipped": True}
+
+    body = req["body"]
     headers = {
         "Content-Type": "application/json; charset=utf-8",
         "User-Agent": "SuiEye-Webhook/1.0",
         "X-SuiEye-Event": event,
         "X-SuiEye-Delivery": f"{sub['id']}-{int(time.time() * 1000)}",
+        **req["headers"],
     }
-    if sub.get("secret"):
+    # 只有通用模式走头部验签；飞书/钉钉的签名已按各自算法放进 body / URL
+    if provider == "generic" and sub.get("secret"):
         headers["X-SuiEye-Signature"] = _sign(sub["secret"], body)
 
     t0 = time.perf_counter()
     status_code, ok, err = None, False, None
     try:
         async with httpx.AsyncClient(timeout=settings.WEBHOOK_TIMEOUT) as cli:
-            resp = await cli.post(sub["url"], content=body, headers=headers)
+            resp = await cli.post(req["url"], content=body, headers=headers)
             status_code = resp.status_code
             ok = 200 <= resp.status_code < 300
             if not ok:
                 err = (resp.text or "")[:400]
+            elif req["kind"] == "chat":
+                # ★ HTTP 200 只说明"对方收到了"，还得看它认不认这个 body / 签名
+                ok, why = chat_adapters.verify(provider, resp.text)
+                if not ok:
+                    err = why
     except Exception as e:
         err = f"{type(e).__name__}: {e}"[:400]
 
     elapsed = int((time.perf_counter() - t0) * 1000)
-    _record(sub["id"], event, payload, status_code, ok, err, elapsed)
+    _record(sub["id"], event, data, status_code, ok, err, elapsed, provider)
     return {"ok": ok, "status": status_code, "error": err, "elapsed_ms": elapsed}
 
 
-def _record(sub_id: int, event: str, payload: dict, status_code, ok: bool, err, elapsed: int):
+def _record(sub_id: int, event: str, data: dict, status_code, ok: bool, err, elapsed: int,
+            provider: str = "generic"):
     """写投递流水 + 更新订阅的运行状态。
 
     ★ 用独立 session：dispatch 跑在后台任务里，和请求的 session 没关系，
       不能复用（否则请求一结束就被关掉）。
     """
+    payload = {"event": event, "provider": provider, "data": data}
     db = SessionLocal()
     try:
         db.add(WebhookDelivery(
@@ -193,7 +226,7 @@ async def dispatch_event(event: str, data: dict):
             .all()
         )
         targets = [
-            {"id": s.id, "url": s.url, "secret": s.secret or ""}
+            {"id": s.id, "url": s.url, "secret": s.secret or "", "provider": s.provider or "generic"}
             for s in subs
             if event in _split_events(s.events)
         ]
@@ -237,6 +270,8 @@ async def integration_info():
         "ws_token_required": bool((settings.WS_TOKEN or "").strip()),
         "ws_online": stats,
         "events": [e for e in EVENTS if e.startswith("alarm.")],
+        # 出站可选接收方（飞书/企微/钉钉/通用），前端下拉直接用这份，别在前端硬编码
+        "providers": chat_adapters.provider_list(),
     }
 
 
@@ -245,6 +280,7 @@ async def integration_info():
 # ============================================================
 class WebhookIn(BaseModel):
     url: str
+    provider: str = "generic"      # generic / feishu / wecom / dingtalk
     events: list[str] = DEFAULT_EVENTS
     secret: str | None = None      # 留空则自动生成，创建响应里回显一次
     description: str = ""
@@ -253,6 +289,7 @@ class WebhookIn(BaseModel):
 
 class WebhookPatch(BaseModel):
     url: str | None = None
+    provider: str | None = None
     events: list[str] | None = None
     description: str | None = None
     enabled: bool | None = None
@@ -269,11 +306,21 @@ def create_webhook(body: WebhookIn, db: Session = Depends(get_db)):
     url = (body.url or "").strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="url 必须以 http:// 或 https:// 开头")
+    provider = _valid_provider(body.provider)
     events = _valid_events(body.events)
 
-    secret = (body.secret or "").strip() or ("whsec_" + secrets.token_hex(16))
+    # ★ 只有通用模式自动生成 secret（我们是签名方，接收方拿它验签）。
+    #   群机器人的 secret 是"对方后台开的加签密钥"，我们不能编一个 ——
+    #   编了就等于强制加签，飞书/钉钉会直接 sign match fail。
+    given = (body.secret or "").strip()
+    if provider == "generic":
+        secret = given or ("whsec_" + secrets.token_hex(16))
+    else:
+        secret = given
+
     sub = WebhookSubscription(
         url=url,
+        provider=provider,
         events=",".join(events),
         secret=secret,
         description=(body.description or "").strip()[:200],
@@ -327,6 +374,8 @@ def update_webhook(sub_id: int, body: WebhookPatch, db: Session = Depends(get_db
         if not url.startswith(("http://", "https://")):
             raise HTTPException(status_code=422, detail="url 必须以 http:// 或 https:// 开头")
         sub.url = url
+    if body.provider is not None:
+        sub.provider = _valid_provider(body.provider)
     if body.events is not None:
         sub.events = ",".join(_valid_events(body.events))
     if body.description is not None:
@@ -354,24 +403,32 @@ def delete_webhook(sub_id: int, db: Session = Depends(get_db)):
 
 @router.post("/api/webhooks/{sub_id}/test")
 async def test_webhook(sub_id: int, db: Session = Depends(get_db)):
-    """立刻发一条测试事件，**同步返回结果** —— 设置页点"测试"要马上看到成功或失败。"""
+    """立刻发一条测试事件，**同步返回结果** —— 设置页点"测试"要马上看到成功或失败。
+
+    ★ 走的是和真实告警完全相同的 `_deliver`，包括 provider 的 body 结构与业务码判定。
+      测试按钮如果另写一套"只发 HTTP 就算成功"，就会骗人。
+    """
     sub = db.query(WebhookSubscription).filter(WebhookSubscription.id == sub_id).first()
     if not sub:
         raise HTTPException(status_code=404, detail="订阅不存在")
 
-    target = {"id": sub.id, "url": sub.url, "secret": sub.secret or ""}
-    payload = {
-        "event": "alarm.test",
-        "ts": _now(),
-        "data": {
-            "id": None,
-            "level": "warning",
-            "rule_name": "连通性测试",
-            "message": "这条来自 SuiEye 设置页的测试按钮，收到即代表回调地址可用",
-            "source": "internal",
-            "origin": "SuiEye",
-            "test": True,
-        },
+    target = {
+        "id": sub.id,
+        "url": sub.url,
+        "secret": sub.secret or "",
+        "provider": sub.provider or "generic",
     }
-    result = await _deliver(target, "alarm.test", payload["data"], payload=payload)
-    return {**result, "url": sub.url}
+    data = {
+        "id": None,
+        "level": "warning",
+        "level_label": "连通性测试",
+        "rule_name": "测试消息",
+        "message": "这条来自 SuiEye 设置页的测试按钮，收到即代表回调地址可用",
+        "scene_label": "系统设置",
+        "source": "internal",
+        "origin": "SuiEye",
+        "created_at": _now(),
+        "test": True,
+    }
+    result = await _deliver(target, "alarm.test", data)
+    return {**result, "url": sub.url, "provider": target["provider"]}

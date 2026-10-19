@@ -666,3 +666,73 @@ $NODE node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5188
 - 设备健康分仍是每请求重算（老 P0），与本次改动无关
 
 
+
+---
+
+## 十八、飞书 / 企微 / 钉钉群机器人接入（2026-10-19）
+
+老板：「可以接入飞书等软件」「也没有让我接飞书机器人啊」。
+第二句是关键：功能做在「设置 → 页面最底部」，**等于没有入口**。
+
+### 18.1 为什么不能"把飞书 URL 填进来就行"
+
+原来的 Webhook 一律发 `{event, ts, data}`。对自建平台没问题，但群机器人只认自己那套：
+
+| 平台 | body 必须是 |
+|---|---|
+| 飞书 | `{"msg_type":"interactive","card":{...}}` |
+| 企业微信 | `{"msgtype":"markdown","markdown":{"content":"..."}}` |
+| 钉钉 | `{"msgtype":"markdown","markdown":{"title":"...","text":"..."}}` |
+
+填了地址但格式不对，第一条告警就是 400，界面上却写着"已订阅"。
+
+### 18.2 更危险的：HTTP 200 不等于送达
+
+三家失败都返回 **HTTP 200**，把失败写在 body 里：
+
+- 飞书签名错 → `{"code":19021,"msg":"sign match fail"}`
+- 企微地址失效 → `{"errcode":93000,...}`
+- 钉钉关键词不匹配 → `{"errcode":310000,...}`
+
+所以 `_deliver` 对群机器人必须再解析业务码，非 0 记失败。
+**只判 HTTP 状态 = 把"被拒收"记成"投递成功"**，告警丢了界面还说好 —— 这是最坏的一种假。
+
+### 18.3 签名算法三家不同（极易记混）
+
+```python
+# 飞书：key="ts\nsecret"，消息空
+hmac.new(f"{ts}\n{secret}".encode(), b"", sha256)
+# 钉钉：key=secret，消息="ts\nsecret"，毫秒 + urlencode，拼 URL
+hmac.new(secret.encode(), f"{ts}\n{secret}".encode(), sha256)
+# 企微：不支持加签
+```
+
+写反不报错，只是 `sign match fail`。本项目的实现与验证见
+`backend/services/chat_adapters.py` 与 `outputs/_qa/_test_chat_adapters.py`。
+
+### 18.4 代码位置
+
+| 文件 | 职责 |
+|---|---|
+| `backend/services/chat_adapters.py` | 四种 provider 的 body 组装 + 签名 + 业务码判定；PROVIDERS 是前端下拉的唯一真源 |
+| `backend/api/routers/webhooks.py` | `_deliver` 走适配层；`provider` 字段；只有 generic 自动生成 secret |
+| `models/database.py` | `webhook_subscriptions.provider`（默认 generic，老订阅行为不变） |
+| `views/Alarms.vue` | 页头「接入飞书」按钮 → `/settings?focus=feishu` |
+| `views/Settings.vue` | 平台下拉、加签密钥、`focus=feishu` 时滚到添加区 + 高亮 + 聚焦 |
+
+### 18.5 两个必须记住的坑
+
+1. **只有 generic 自动生成 secret**。群机器人的 secret 是"对方后台开的加签密钥"，
+   我们编一个就等于强制加签 → 飞书直接 `sign match fail`。
+2. **测试脚本必须自清理**。`_test_chat_adapters.py` 会用 ingest 打一条真告警，
+   不删就会在告警列表里长期挂着「QA飞书真实链路17924…」，还参与统计。
+   本轮就踩了：库里有 4 条测试告警，已删并给脚本加了自动清理。
+
+### 18.6 验收
+
+| 探针 | 结果 |
+|---|---|
+| `_test_chat_adapters.py` | **23/23**：四种 body 结构、三种签名、业务码失败判定、真告警推送 |
+| `qa_feishu_entry.py` | **7/7**：按钮存在 → 跳转 → 入视口 → 高亮 → 平台已选飞书 → 地址框聚焦 |
+| `qa_ds.py` | 11 页 ALL PASS |
+| 库洁净 | 测试后回到 456 条告警 / 0 external / 0 订阅 |

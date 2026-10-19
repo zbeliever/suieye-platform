@@ -17,12 +17,15 @@
  *    现在统一走 PageShell + 4 格 StatCard + Panel，颜色全部来自 tokens.css。
  *    KPI 四格都来自已有真实字段，没有为了"凑四格"新造指标。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api'
 import PageShell from '../components/PageShell.vue'
 import Panel from '../components/Panel.vue'
 import StatCard from '../components/StatCard.vue'
+
+const route = useRoute()
 
 const loading = ref(true)
 const sys = ref(null)
@@ -168,10 +171,20 @@ const integration = ref({})
 const hooks = ref([])
 const newHookUrl = ref('')
 const newHookDesc = ref('')
+const newHookProvider = ref('feishu')   // 默认飞书：这是老板明确要接的第一家
+const newHookSecret = ref('')           // 飞书/钉钉的加签密钥（对方后台开了才需要）
 const hookSaving = ref(false)
 const hookTesting = ref(0)
 
 const wsOnline = computed(() => integration.value.ws_online?.alarms ?? 0)
+
+// 接收方类型列表来自后端（services/chat_adapters.py 是唯一真源），前端不硬编码
+const providerList = computed(() => integration.value.providers || [])
+const curProvider = computed(
+  () => providerList.value.find((p) => p.id === newHookProvider.value) || {},
+)
+// 只有飞书/钉钉有"加签"这件事；企微的机器人和通用模式都不需要用户填
+const providerNeedsSecret = computed(() => ['feishu', 'dingtalk'].includes(newHookProvider.value))
 
 async function loadIntegration() {
   try {
@@ -186,10 +199,16 @@ async function loadIntegration() {
   }
 }
 
-/** 投递状态 → 圆角标签（只表达事实：正常 / 失败 / 还没推过 / 已停用） */
+/** 投递状态 → 圆角标签（只表达事实：正常 / 失败 / 还没推过 / 已停用）
+ *
+ * ★ 必须先看 last_error 再看状态码：群机器人（飞书/钉钉/企微）被拒收时
+ *   对方照样回 HTTP 200，只是 body 里 code/errcode 非 0。
+ *   只看 200 会把"被拒收"显示成"正常 200"，等于骗自己。
+ */
 function hookState(w) {
   if (!w.enabled) return { cls: 'off', text: '已停用' }
   if (!w.last_attempt_at) return { cls: 'idle', text: '等待首推' }
+  if (w.last_error) return { cls: 'bad', text: w.last_status ? `失败 ${w.last_status}` : '连接失败' }
   const ok = w.last_status >= 200 && w.last_status < 300
   return ok
     ? { cls: 'ok', text: `正常 ${w.last_status}` }
@@ -203,22 +222,32 @@ async function addHook() {
     return
   }
   hookSaving.value = true
+  const provider = newHookProvider.value
   try {
     const r = await api.post('/webhooks', {
       url,
+      provider,
       events: ['alarm.created'],
       description: newHookDesc.value.trim(),
+      secret: newHookSecret.value.trim() || null,
     })
     newHookUrl.value = ''
     newHookDesc.value = ''
+    newHookSecret.value = ''
     await loadIntegration()
-    // 密钥只在创建时返回一次，之后任何接口都拿不到 —— 必须当场提醒保存
-    await ElMessageBox.alert(
-      `<div style="word-break:break-all;font-family:var(--font-mono);font-size:12px;line-height:1.6">${r.secret}</div>
-       <div style="margin-top:8px;font-size:12px;color:#86909c">接收方用它验签：HMAC-SHA256(secret, 原始请求体) 与请求头 X-SuiEye-Signature 比对。</div>`,
-      '请保存签名密钥（只显示这一次）',
-      { dangerouslyUseHTMLString: true, confirmButtonText: '已保存' },
-    )
+
+    if (provider === 'generic') {
+      // 通用模式的 secret 是我们生成的，对方要拿它验签 —— 只回显这一次，必须当场提醒
+      await ElMessageBox.alert(
+        `<div style="word-break:break-all;font-family:var(--font-mono);font-size:12px;line-height:1.6">${r.secret}</div>
+         <div style="margin-top:8px;font-size:12px;color:#86909c">接收方用它验签：HMAC-SHA256(secret, 原始请求体) 与请求头 X-SuiEye-Signature 比对。</div>`,
+        '请保存签名密钥（只显示这一次）',
+        { dangerouslyUseHTMLString: true, confirmButtonText: '已保存' },
+      )
+    } else {
+      // 群机器人没有"我们签发密钥"这回事，弹密钥只会让人困惑
+      ElMessage.success(`已添加${r.provider_label}，点「测试」确认群里能收到`)
+    }
   } catch (e) {
     ElMessage.error(e?.response?.data?.detail || '添加订阅失败')
   } finally {
@@ -278,10 +307,43 @@ function copyCurl() {
   )
 }
 
-onMounted(() => {
+/** 从告警页「接入飞书」跳过来时，滚到添加区、闪一下、聚焦地址框。
+ *
+ *  ★ 只滚到面板不够：面板里有入站/出站两块，用户还得自己找哪个框填地址。
+ *    所以直接定位到 `.hook-add` 并聚焦它的输入框 —— 落地即可粘贴。
+ */
+async function jumpToHookAdd() {
+  for (let i = 0; i < 25 && !document.querySelector('.hook-add'); i++) {
+    await new Promise((r) => setTimeout(r, 120))
+  }
+  const add = document.querySelector('.hook-add')
+  if (!add) return
+  add.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  add.classList.add('focus-flash')
+  setTimeout(() => document.querySelector('.hook-url-input input')?.focus(), 480)
+  setTimeout(() => add.classList.remove('focus-flash'), 2600)
+}
+
+onMounted(async () => {
   loadAll()
-  loadIntegration()
+  await loadIntegration()
+  if (route.query.focus === 'feishu') {
+    newHookProvider.value = 'feishu'
+    await nextTick()
+    jumpToHookAdd()
+  }
 })
+
+// 组件已挂载时再次从告警页点「接入飞书」，onMounted 不会再跑，靠 watch 兜住
+watch(
+  () => route.query.focus,
+  (v) => {
+    if (v === 'feishu') {
+      newHookProvider.value = 'feishu'
+      nextTick(jumpToHookAdd)
+    }
+  },
+)
 </script>
 
 <template>
@@ -497,13 +559,18 @@ onMounted(() => {
                 <div v-for="w in hooks" :key="w.id" class="hook-row">
                   <span class="hook-state" :class="hookState(w).cls">{{ hookState(w).text }}</span>
                   <div class="hook-main">
-                    <span class="hook-url mono">{{ w.url }}</span>
+                    <span class="hook-url mono">
+                      <span class="hook-prov">{{ w.provider_label || '通用 JSON' }}</span>{{ w.url }}
+                    </span>
                     <span class="hook-meta">
                       {{ w.events.join(' / ') }}
                       <template v-if="w.description"> · {{ w.description }}</template>
                       <template v-if="w.ok_count || w.fail_count">
                         · 成功 {{ w.ok_count }} / 失败 {{ w.fail_count }}
                       </template>
+                      <!-- 失败原因必须露在行内：群机器人被拒收时状态码仍是 200，
+                           只显示"失败 200"等于没说清为什么 -->
+                      <span v-if="w.last_error" class="hook-err"> · {{ w.last_error }}</span>
                     </span>
                   </div>
                   <el-button link size="small" :loading="hookTesting === w.id" @click="testHook(w)">测试</el-button>
@@ -516,16 +583,24 @@ onMounted(() => {
               </div>
 
               <div class="hook-add">
+                <el-select v-model="newHookProvider" size="small" class="hook-prov-select">
+                  <el-option v-for="p in providerList" :key="p.id" :label="p.label" :value="p.id" />
+                </el-select>
                 <el-input v-model="newHookUrl" size="small" class="hook-url-input"
-                  placeholder="https://your-mes.example.com/suieye/alarm" />
+                  :placeholder="curProvider.placeholder || 'https://…'" />
+                <el-input v-if="providerNeedsSecret" v-model="newHookSecret" size="small"
+                  class="hook-secret" placeholder="加签密钥（选填）" show-password />
                 <el-input v-model="newHookDesc" size="small" class="hook-desc-input" placeholder="备注（选填）" />
                 <el-button size="small" type="primary" :loading="hookSaving" @click="addHook">
                   添加订阅
                 </el-button>
               </div>
               <div class="int-note" style="margin-top: 8px;">
-                只支持 <code>http(s)://</code> 回调。钉钉/企业微信请填机器人 Webhook 地址；
-                接收方按 <code>X-SuiEye-Signature</code> 验签后可确认事件确实来自 SuiEye。
+                {{ curProvider.hint || '填对方能接收 HTTP POST 的地址' }}
+                <template v-if="newHookProvider === 'generic'">
+                  只支持 <code>http(s)://</code> 回调；接收方按 <code>X-SuiEye-Signature</code>
+                  验签（HMAC-SHA256）后可确认事件确实来自 SuiEye。
+                </template>
               </div>
             </div>
           </Panel>
@@ -649,6 +724,7 @@ onMounted(() => {
 }
 .hook-state {
   flex-shrink: 0;
+  white-space: nowrap;   /* 不加会被挤成竖排（"等待首推"四个字一列） */
   padding: 1px 8px;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
@@ -688,7 +764,38 @@ onMounted(() => {
   border: 1px dashed var(--border-1);
   border-radius: var(--radius);
 }
-.hook-add { display: flex; gap: 8px; margin-top: 10px; }
-.hook-url-input { flex: 1; }
-.hook-desc-input { width: 180px; }
+.hook-add { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.hook-url-input { flex: 1; min-width: 220px; }
+.hook-desc-input { width: 150px; }
+.hook-prov-select { width: 140px; flex-shrink: 0; }
+.hook-secret { width: 160px; flex-shrink: 0; }
+
+/* 从告警页「接入飞书」跳过来的落点高亮：闪 2 下，不常驻 */
+.hook-add.focus-flash {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+  animation: hookFlash 1.3s ease 2;
+}
+@keyframes hookFlash {
+  0%, 100% { outline-color: var(--color-primary); }
+  50% { outline-color: transparent; }
+}
+
+/* 接收方类型徽标：与 URL 同一行、灰色的"这是谁"，不抢状态标签的颜色 */
+.hook-prov {
+  display: inline-block;
+  padding: 0 5px;
+  margin-right: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-family: var(--font-family);
+  font-size: 11px;
+}
+/* 失败原因（例如"被对方拒收 code=19021 sign match fail"）用危险色，但不能换行把行撑高 */
+.hook-err {
+  color: var(--color-danger);
+  font-family: var(--font-mono);
+}
 </style>
