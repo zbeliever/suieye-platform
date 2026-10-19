@@ -189,7 +189,7 @@ function toggleSegment(seg) {
  *      · 配药助手               → 药剂间（药剂制备的地方）
  *      · 系统设置               → 配电室（机柜与开关柜所在）
  *      · 浮选/安全工作台         → 化验室（取样化验与工艺调整）
- *      · 直播墙                 → 监控立杆（4 路摄像头的挂载点）
+ *      · 实时监控               → 监控立杆（摄像头画面从摄像头点进去）
  *    左侧按这个结构排列，就与 3D 场景里的建筑一一对应 —— 左侧是"厂区导览"，
  *    不再是"功能清单"。后续阶段会在 3D 里把这些建筑实体建出来，点建筑进同一页。
  *
@@ -247,10 +247,15 @@ const FACILITY_ENTRIES = [
   {
     id: 'cctv',
     name: '监控立杆',
-    tag: '厂区沿线 · 4 路',
+    // ★ 2026-10-19：tag 从「厂区沿线 · 4 路」改口，因为点进去的 /monitor 只有 1 路真画面。
+    //   照旧写"4 路"= 说 4 给 1，是老板最反感的"数据假"；写清"1 路在线"反而严谨，
+    //   也为将来接满 4 路留了伏笔（届时只改这两处文案 + /monitor 的 ?cam= 参数）。
+    tag: '4 路机位 · 1 路在线',
     icon: 'VideoCamera',
-    desc: '全流程摄像点位',
-    entries: [{ path: '/livewall' }],
+    desc: '厂区沿线摄像点位，当前接入粗选给矿现场画面',
+    // ★ 摄像头该点出"画面"，而画面在 /monitor（单点位现场画面 + 画面内 HUD）；
+    //   /livewall 是汇报大屏，里面没有这 4 路画面 —— 旧映射是 /monitor 砍成单点前的残留。
+    entries: [{ path: '/monitor' }],
   },
 ]
 
@@ -4643,10 +4648,13 @@ function healthColor(h) {
       </div>
 
       <!-- 门面只留一个去处。原来这里还有 报修工单/标签/自转/静音/复位 —— 那是调试工具，
-           门面不该出现；需要它们时进 /monitor 或 /dashboard，各自都有。 -->
+           门面不该出现；需要它们时进 /monitor 或 /dashboard，各自都有。
+           ★ 2026-10-19 拍板（老板）：门面是展示层，下一步该去另一块展示层。
+             汇报动线 = 门面(讲厂区) → 直播墙(讲全厂运行) → 各专题页；
+             操作台则从"空间对象"进（点立杆看那路画面、点浮选段看那段工艺）。 -->
       <div class="fh-actions">
-        <router-link to="/monitor" class="fh-cta">
-          <span>进入实时监控</span>
+        <router-link to="/livewall" class="fh-cta">
+          <span>进入直播墙</span>
           <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
             <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor"
               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
