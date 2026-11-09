@@ -47,6 +47,14 @@ yolov8n-seg.pt
 # 注意：froth-loop.mp4 / froth-poster.jpg 为直播墙与监控页必需素材，已保留入库
 frontend/public/media/froth2019/
 
+# ===== 参赛打包副本（本地留档，不入库）=====
+# likephoto/ 与 样例图像/ 逐字节相同；suieyegets/ 为旧副本，含数据库备份与 yolov8 权重
+likephoto/
+suieyegets/
+
+# ===== 评审视频（133MB，超过 GitHub 单文件 100MB 上限，不入库）=====
+作品评审视频.mp4
+
 # ===== 临时与日志 =====
 *.log
 _fe.log

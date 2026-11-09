@@ -68,8 +68,13 @@ defineProps({
   display: flex;
   flex-direction: column;
   gap: var(--header-gap);
-  height: 100%;
-  min-height: 0;
+  /* ★ 2026-10-25：height:100% → min-height:100%。
+     原因：写死 100% 时页面高度永远等于视口，内容多出来的部分只能溢出到
+     .app-main 之外（以前那里 overflow:hidden，直接被裁）。
+     改成 min-height 后两种情形都对：
+       · 内容装得下 → 盒子仍等于视口高，flex:1 的主体照样撑满（大屏页不变）
+       · 内容装不下 → 盒子长到内容高度，padding 底部生效，.app-main 出滚动条 */
+  min-height: 100%;
   padding: var(--page-pad-y) var(--page-pad-x);
   box-sizing: border-box;
 }

@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ensureAlarmNotifications } from './api/ws'
 
 /**
@@ -23,11 +24,29 @@ onMounted(() => {
   // 全局 WS 告警通知（与侧栏无关，是事件订阅，必须留在外壳）
   ensureAlarmNotifications()
 })
+
+/**
+ * 2026-10-25：主区变成滚动容器后新增 —— 换页必须把滚动位置归零。
+ *
+ * 为什么必须有：
+ *   滚动条现在挂在 .app-main 上（不是 window），浏览器不会像正常翻页那样自动回到顶部。
+ *   不处理的话，在「设置」滑到底再点进「报表」，报表会直接以"已经滚到一半"的样子打开，
+ *   观众第一眼看到的是一段没有页头的中间内容 —— 比原来不能滚更迷惑。
+ */
+const mainEl = ref(null)
+const route = useRoute()
+watch(
+  () => route.fullPath,
+  () => {
+    const el = mainEl.value?.$el || mainEl.value
+    if (el && typeof el.scrollTop === 'number') el.scrollTop = 0
+  }
+)
 </script>
 
 <template>
   <el-container class="app-shell">
-    <el-main class="app-main">
+    <el-main ref="mainEl" class="app-main">
       <router-view />
     </el-main>
   </el-container>
@@ -38,10 +57,16 @@ onMounted(() => {
   height: 100vh;
 }
 
-/* 无侧栏后主区直接铺满；内边距交给各页自己控制（3D 页要贴边） */
+/* 无侧栏后主区直接铺满；内边距交给各页自己控制（3D 页要贴边）
+   ★ 2026-10-25：overflow hidden → auto。原来的 hidden 把"内容比视口高"的页面
+     直接裁掉且不可滚（设置 1445 / 报表 1322 / 水位 1618 @768 高），
+     老板看到的就是"各页不能下滑，展示不全"。
+     现在主区是唯一的滚动容器：内容装得下 → 不出现滚动条（大屏页仍是满屏）；
+     装不下 → 整页纵向滚动。横向继续 hidden，避免出现左右抖动的双滚动条。 */
 .app-main {
   padding: 0;
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 </style>

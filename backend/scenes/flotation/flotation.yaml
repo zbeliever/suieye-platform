@@ -56,7 +56,7 @@ alarm_rules:
   - name: pb_too_low
     field: predicted.pb_grade_xrf
     condition: "<"
-    threshold: 4.0
+    threshold: 3.95
     level: warning
     message: "铅品位偏低（<4%），建议检查浮选药剂添加量"
     cooldown_sec: 600

@@ -5394,7 +5394,11 @@ const typeNames = {
 .equipment-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 40px);
+  /* ★ 2026-10-25：calc(100vh - 40px) → 100%。
+     40px 是当年 .app-main 有 20px 上下内边距时留下的补偿；现在外壳内边距为 0，
+     这个减法等于在 3D 页底部留了一条 40px 的灰边（3D 画面少 40px 高）。
+     用 100% 跟随外壳，满屏且不再多出灰边。 */
+  height: 100%;
   gap: 0;
   /* ★ 2026-10-19：页底改站内统一浅灰（--bg-3），门面白卡才有"浮起来"的边界。
      以前是纯白底 + 白页头，等于页头没有形状。 */
